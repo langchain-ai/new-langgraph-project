@@ -6,18 +6,17 @@ Works with a chat model with tool calling support.
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
-import anthropic
-from agent.configuration import Configuration
-from agent.state import State
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph
+
+from agent.configuration import Configuration
+from agent.state import State
+from agent.utils import load_chat_model
 
 # Define the function that calls the model
 
 
-async def call_model(
-    state: State, config: RunnableConfig
-) -> Dict[str, List[Dict[str, Any]]]:
+async def call_model(state: State, config: RunnableConfig) -> Dict[str, List[Any]]:
     """Call the LLM powering our "agent".
 
     This function prepares the prompt, initializes the model, and processes the response.
@@ -33,23 +32,11 @@ async def call_model(
     system_prompt = configuration.system_prompt.format(
         system_time=datetime.now(tz=timezone.utc).isoformat()
     )
-    toks = []
-    async with anthropic.AsyncAnthropic() as client:
-        async with client.messages.stream(
-            model=configuration.model_name,
-            max_tokens=1024,
-            system=system_prompt,
-            messages=state.messages,
-        ) as stream:
-            async for text in stream.text_stream:
-                toks.append(text)
+    model = load_chat_model(configuration.model_name)
+    res = await model.ainvoke([("system", system_prompt), *state.messages])
 
     # Return the model's response as a list to be added to existing messages
-    return {
-        "messages": [
-            {"role": "assistant", "content": [{"type": "text", "text": "".join(toks)}]}
-        ]
-    }
+    return {"messages": [res]}
 
 
 # Define a new graph

@@ -27,7 +27,7 @@ class Configuration:
                 "kind": "llm",
             }
         },
-    ] = "claude-3-5-sonnet-20240620"
+    ] = "anthropic/claude-3-5-sonnet-20240620"
     """The name of the language model to use for our chatbot."""
 
     @classmethod
