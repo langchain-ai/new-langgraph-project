@@ -2,11 +2,20 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from langgraph.graph.message import AnyMessage
+from pydantic import BaseModel
 
 
-@dataclass
-class State:
+class Bar(BaseModel):
+    baz: str
+    messages: list[AnyMessage]
+
+
+class Foo(BaseModel):
+    bar: Bar
+
+
+class State(BaseModel):
     """Defines the input state for the agent, representing a narrower interface to the outside world.
 
     This class is used to define the initial state and structure of incoming data.
@@ -15,3 +24,4 @@ class State:
     """
 
     changeme: str = "example"
+    foo: Foo

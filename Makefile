@@ -22,6 +22,15 @@ extended_tests:
 	python -m pytest --only-extended $(TEST_FILE)
 
 
+test_serialization:
+	uvx --refresh --from "langgraph-cli[inmem]" --with-editable . --python 3.11 langgraph dev --no-browser & \
+	sleep 2 && \
+	python -m pytest tests/test_serialization.py; \
+	EXIT_CODE=$$?; \
+	pkill -f "langgraph dev"; \
+	exit $$EXIT_CODE
+
+
 ######################
 # LINTING AND FORMATTING
 ######################
@@ -64,4 +73,3 @@ help:
 	@echo 'tests                        - run unit tests'
 	@echo 'test TEST_FILE=<test_file>   - run all tests in file'
 	@echo 'test_watch                   - run unit tests in watch mode'
-

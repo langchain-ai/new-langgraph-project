@@ -5,6 +5,7 @@ This agent returns a predefined response without using an actual LLM.
 
 from typing import Any, Dict
 
+from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph
 
@@ -15,6 +16,10 @@ from agent.state import State
 async def my_node(state: State, config: RunnableConfig) -> Dict[str, Any]:
     """Each node does work."""
     configuration = Configuration.from_runnable_config(config)
+    assert isinstance(state.foo.bar.messages, list)
+    assert isinstance(
+        state.foo.bar.messages[0], HumanMessage
+    ), f"This should be an HumanMessage, got {type(state.foo.bar.messages[0])} for {state.foo.bar.messages[0]}"
     # configuration = Configuration.from_runnable_config(config)
     # You can use runtime configuration to alter the behavior of your
     # graph.
