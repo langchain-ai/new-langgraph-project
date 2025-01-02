@@ -9,6 +9,7 @@ readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.9"
 dependencies = [
+    "langgraph-sdk>=0.1.48",
     "langgraph>=0.2.6",
     "python-dotenv>=1.0.1",
 ]
@@ -54,3 +55,8 @@ lint.ignore = [
 "tests/*" = ["D", "UP"]
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+
+[dependency-groups]
+dev = [
+    "langgraph-cli[inmem]>=0.1.65",
+]

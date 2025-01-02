@@ -14,6 +14,9 @@ from agent.state import State
 
 async def my_node(state: State, config: RunnableConfig) -> Dict[str, Any]:
     """Each node does work."""
+    user = config["configurable"]["langgraph_auth_user"]
+    if user.identity != "langgraph-studio-user":
+        assert user.foo == "bar"
     configuration = Configuration.from_runnable_config(config)
     # configuration = Configuration.from_runnable_config(config)
     # You can use runtime configuration to alter the behavior of your
