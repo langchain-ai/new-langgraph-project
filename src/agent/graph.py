@@ -18,6 +18,7 @@ class Configuration(TypedDict):
     Set these when creating assistants OR when invoking the graph.
     See: https://langchain-ai.github.io/langgraph/cloud/how-tos/configuration_cloud/
     """
+
     my_configurable_param: str
 
 
@@ -28,17 +29,18 @@ class State:
     Defines the initial structure of incoming data.
     See: https://langchain-ai.github.io/langgraph/concepts/low_level/#state
     """
+
     changeme: str = "example"
 
 
-async def my_node(state: State, config: RunnableConfig) -> Dict[str, Any]:
-    """Example node: processes input and returns output.
+async def call_model(state: State, config: RunnableConfig) -> Dict[str, Any]:
+    """Process input and returns output.
 
     Can use runtime configuration to alter behavior.
     """
     configuration = config["configurable"]
     return {
-        "changeme": "output from my_node. "
+        "changeme": "output from call_model. "
         f'Configured with {configuration.get("my_configurable_param")}'
     }
 
@@ -46,7 +48,7 @@ async def my_node(state: State, config: RunnableConfig) -> Dict[str, Any]:
 # Define the graph
 graph = (
     StateGraph(State, config_schema=Configuration)
-    .add_node(my_node)
-    .add_edge("__start__", "my_node")
+    .add_node(call_model)
+    .add_edge("__start__", "call_model")
     .compile(name="New Graph")
 )
