@@ -2,8 +2,11 @@ import pytest
 
 from agent import graph
 
+pytestmark = pytest.mark.anyio
+
 
 @pytest.mark.langsmith
 async def test_agent_simple_passthrough() -> None:
-    res = await graph.ainvoke({"changeme": "some_val"})
+    inputs = {"changeme": "some_val"}
+    res = await graph.ainvoke(inputs)
     assert res is not None
