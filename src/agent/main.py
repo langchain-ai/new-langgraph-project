@@ -6,18 +6,16 @@ from langgraph.graph.message import add_messages
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.config import get_stream_writer
-
+from functools import partial
+import asyncio
 import asyncio
 import os
 from openai import OpenAI
 from dotenv import load_dotenv
-from .utils import chat_cache, SYSTEM_PROMPT
+from agent.utils import chat_cache, SYSTEM_PROMPT
 
 # Load environment variables from .env file
 load_dotenv()
-
-
-
 
 app = FastAPI()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -43,10 +41,33 @@ async def stream_response(client_id: str):
     full_reply = "".join(assistant_chunks)
     chat_cache[client_id].append({"role": "assistant", "content": full_reply})
 
+def validate_info(history: list):
+    prompt = """
+    You are a helpful assistant.
+    You are given a list of messages.
+    You need to check if the information is complete.
+    If it is, return "True".
+    If it is not, return "False".
+    """
+    response =client.responses.create(
+        model="gpt-4.1",
+        input=prompt + "\n" + str(history)
+    )
+    if "true" in response.output_text.lower():
+        return True
+    else:
+        return False
 
 class State(TypedDict):
     messages: Annotated[list, add_messages]
     client_id: str
+    info_complete: bool
+
+def routing_function(state: State):
+    if state["info_complete"]:
+        return "chatbot"
+    else:
+        return "validate_info"
 
 def chatbot(state: State):
     writer = get_stream_writer()
@@ -63,23 +84,52 @@ def chatbot(state: State):
         if event.type == "response.output_text.delta":
             chunk = event.delta
             if chunk:
-                print(chunk)
-                #writer({"token": chunk})   # << LangGraph will yield this chunk outward
                 writer(chunk)
                 assistant_chunks.append(chunk)
 
     full_reply = "".join(assistant_chunks)
     chat_cache[client_id].append({"role": "assistant", "content": full_reply})
-    # Return the updated state
+    
+    #state["info_complete"] = validate_info(history)
+    state["info_complete"] = validate_info(history)
     state["messages"] = history
+    return state
+
+def write_song(state: State):
+    writer = get_stream_writer()
+    client_id = state["client_id"]
+    history = chat_cache[client_id]
+    # Stream chunks from OpenAI client
+    stream = client.responses.create(
+        model="gpt-4.1",
+        input="write a song about " + history,
+        stream=True,
+    )
+    assistant_chunks = []
+    for event in stream:
+        if event.type == "response.output_text.delta":
+            chunk = event.delta
+            if chunk:
+                writer(chunk)
+                assistant_chunks.append(chunk)
+
+    full_reply = "".join(assistant_chunks)
+    chat_cache[client_id].append({"role": "assistant", "content": full_reply})
     return state
 
 graph_builder = StateGraph(State)
 graph_builder.add_node("chatbot", chatbot)
 graph_builder.add_edge(START, "chatbot")
-graph_builder.add_edge("chatbot", END)
-graph = graph_builder.compile(checkpointer=MemorySaver())
+graph_builder.add_conditional_edges("chatbot", routing_function)
+graph_builder.add_node("write_song", write_song)
+#graph_builder.add_edge("chatbot", END)
+graph_builder.add_edge("write_song", END)
+#graph = graph_builder.compile(checkpointer=MemorySaver())
+graph = graph_builder.compile()
 
+"""
+langgraph new src/main.py --template new
+"""
 
 @app.post("/chat/{session_id}")
 async def chat(session_id: str, request: Request):

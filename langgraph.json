@@ -1,11 +1,7 @@
 {
   "dependencies": ["."],
   "graphs": {
-    "ContentEngine ": "src/ContentEngine/graph.py:graph",
-    "CompetitionEngine": "src/CompetitionEngine/graph.py:graph",
-    "MessagingEngine": "src/MessagingEngine/graph.py:graph",
-    "OutcomeEngine": "src/OutcomeEngine/graph.py:graph"
-
+    "agent ": "src/agent/main.py:graph"
   },
   "env": ".env",
   "image_distro": "wolfi"
