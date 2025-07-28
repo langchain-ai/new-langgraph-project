@@ -92,5 +92,16 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-
 langgraph new sappington-langgraph-project --template sappington-langgraph-project
+
+
+# Load server:
+uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+
+# Send request to the server:
+curl -X POST "http://localhost:8000/chat/test-session" \ 
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "can you write me latest question??",
+    "client_id": "user123"
+  }'

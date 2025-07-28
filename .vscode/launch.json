@@ -1,0 +1,32 @@
+{
+    // .vscode/launch.json
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "name": "Debug FastAPI - main_lg",
+        "type": "python",
+        "request": "launch",
+  
+        // ⬇️  Start Uvicorn as a module so autoreload still works
+        "module": "uvicorn",
+  
+        // ⬇️  Tell Uvicorn where the FastAPI app lives
+        //     <python-file-name>:<FastAPI-instance>
+        "args": [
+          "src.main:app",
+          "--reload",                 // hot-reload code
+          "--host", "127.0.0.1",
+          "--port", "8000"
+        ],
+  
+        // ⬇️  If you keep secrets/keys in a .env file
+        "envFile": "${workspaceFolder}/.env",
+  
+        // ⬇️  Let the debugger step into libs as well
+        "justMyCode": false,
+  
+        // ⬇️  Use VS Code’s terminal so you can see log output
+        "console": "integratedTerminal"
+      }
+    ]
+  }
