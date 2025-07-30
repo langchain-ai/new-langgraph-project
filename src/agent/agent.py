@@ -70,6 +70,7 @@ def EngineRouter(state: MyState):
     }
 
 graph_builder = StateGraph(MyState)
+
 # nodes
 graph_builder.add_node("MarketingMachine", MarketingMachine)
 graph_builder.add_node("MessagingEngine", MessagingEngine)
