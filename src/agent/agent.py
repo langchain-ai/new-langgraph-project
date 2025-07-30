@@ -16,11 +16,11 @@ class MyState(TypedDict):
     info_complete: bool
 
 
-user_info_to_get = ["user name", "user age"]
+user_info_to_get = "private name and age"
 
 def UserInfoValidator(messages):
     messages_str = "\n".join([f"{msg.type}: {msg.content}" for msg in messages if msg.type == "human"])
-    prompt = f"""you need to return True if *all* the next information is inside the messages, otherwise return False. DROP EXPLANATION. 
+    prompt = f"""you need to return True if *all* the next information is in the next conversation, otherwise return False. DROP EXPLANATION. 
         The user info to get is: {user_info_to_get}.
         The messages are: {messages_str}"""
     response = llm.invoke(prompt)
@@ -47,28 +47,29 @@ def MarketingMachine(state: MyState):
     messages = [system_message] + state["messages"]
     response = llm.invoke(messages)
     if UserInfoValidator(messages):
-        return {"messages": [response],"info_complete": True}
+        return {"messages": response,"info_complete": True}
     else:
-        return {"messages": [response],"info_complete": False}
+        return {"messages": response,"info_complete": False}
 
 def MessagingEngine(state: MyState):
     new_message = AIMessage(content="Welcome to Messaging Engine")
-    return {"messages": [new_message]}
+    return {"messages": new_message}
 
 def ContentEngine(state: MyState):
     new_message = AIMessage(content="Welcome to Content Engine")
-    return {"messages": [new_message]}
+    return {"messages": new_message}
 
 def EngineRouter(state: MyState):
     system_message = SystemMessage(content=f"Based on the user age you need to decide to which engine you need to route the user if you user is under 18 you need to route to the ContentEngine, otherwise you need to route to the MessagingEngine. Return the engine name only.")
     messages = [system_message] + state["messages"]
     response = llm.invoke(messages)
-    new_messages = state["messages"] + [response]
+    #new_messages = state["messages"] + [response]
     return {
-        "messages": new_messages,  # Update state
-        "info_complete": state["info_complete"]  # Pass-through
+        #"messages": new_messages,  # Update state
+        #"info_complete": state["info_complete"]  # Pass-through
     }
 
+# graph builder
 graph_builder = StateGraph(MyState)
 
 # nodes
@@ -91,7 +92,6 @@ graph_builder.add_conditional_edges(
         "END": END
     }
 )
-
 graph_builder.add_conditional_edges(
     "EngineRouter",
     engine_decision_router,
