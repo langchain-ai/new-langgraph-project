@@ -1,14 +1,14 @@
 from typing import Annotated
 from langgraph.graph.message import add_messages
 from typing import TypedDict
-from langchain.chat_models import init_chat_model
+#from langchain.chat_models import init_chat_model
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph.message import add_messages
 from langchain_core.messages import AnyMessage
 from langgraph.graph import StateGraph, START, END
 from langchain_core.messages import SystemMessage, AIMessage
 "LLM"
-llm = init_chat_model(model="openai:gpt-4o-mini")
+#llm = init_chat_model(model="openai:gpt-4o-mini")
 
 "Graph State"
 class MyState(TypedDict):
