@@ -33,8 +33,12 @@ def engine_decision_router(state: MyState):
     last_response = state["messages"][-1].content.lower()
     if "messaging" in last_response:
         return "MessagingEngine"
+    elif "competition" in last_response:
+        return "CompetitionEngine"
+    elif "outcome" in last_response:
+        return "OutcomeEngine"
     else:
-        return "ContentEngine"  
+        return "ContentEngine" 
 
 def routing_function(state: MyState):
     if state["info_complete"]:
@@ -59,14 +63,30 @@ def ContentEngine(state: MyState):
     new_message = AIMessage(content="Welcome to Content Engine")
     return {"messages": new_message}
 
+def OutcomeEngine(state: MyState):
+    new_message = AIMessage(content="Welcome to Outcome Engine")
+    return {"messages": new_message}
+
+def CompetitionEngine(state: MyState):
+    new_message = AIMessage(content="Welcome to Competition Engine")
+    return {"messages": new_message}
+
 def EngineRouter(state: MyState):
-    system_message = SystemMessage(content=f"Based on the user age you need to decide to which engine you need to route the user if you user is under 18 you need to route to the ContentEngine, otherwise you need to route to the MessagingEngine. Return the engine name only.")
+    system_message = SystemMessage(content="""
+        You need to decide to which engine to route the user based on age.
+        Rules:
+        - If the user is under 13 → route to ContentEngine
+        - If the user is between 13 and 17 → route to OutcomeEngine
+        - If the user is between 18 and 24 → route to CompetitionEngine
+        - If the user is 25 or older → route to MessagingEngine
+        Return the engine name only (ContentEngine / OutcomeEngine / CompetitionEngine / MessagingEngine).
+        """)
     messages = [system_message] + state["messages"]
     response = llm.invoke(messages)
-    #new_messages = state["messages"] + [response]
+    new_messages = state["messages"] + [response]
     return {
-        #"messages": new_messages,  # Update state
-        #"info_complete": state["info_complete"]  # Pass-through
+        "messages": new_messages,  # Update state
+        "info_complete": state["info_complete"]  # Pass-through
     }
 
 # graph builder
@@ -76,12 +96,17 @@ graph_builder = StateGraph(MyState)
 graph_builder.add_node("MarketingMachine", MarketingMachine)
 graph_builder.add_node("MessagingEngine", MessagingEngine)
 graph_builder.add_node("ContentEngine", ContentEngine)
+graph_builder.add_node("OutcomeEngine", OutcomeEngine)
+graph_builder.add_node("CompetitionEngine", CompetitionEngine)
 graph_builder.add_node("EngineRouter", EngineRouter)
+
 
 # edges
 graph_builder.add_edge(START, "MarketingMachine")
 graph_builder.add_edge("MessagingEngine", END)
 graph_builder.add_edge("ContentEngine", END)
+graph_builder.add_edge("OutcomeEngine", END)
+graph_builder.add_edge("CompetitionEngine", END)
 
 # conditional edges
 graph_builder.add_conditional_edges(
@@ -97,7 +122,9 @@ graph_builder.add_conditional_edges(
     engine_decision_router,
     {
         "MessagingEngine": "MessagingEngine",
-        "ContentEngine": "ContentEngine"
+        "ContentEngine": "ContentEngine",
+        "OutcomeEngine": "OutcomeEngine",
+        "CompetitionEngine": "CompetitionEngine"
     }
 )
 
