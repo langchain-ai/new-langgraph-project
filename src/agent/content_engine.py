@@ -7,6 +7,8 @@ from langgraph.graph import StateGraph, START, END
 
 class ContentEngineState(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]
+    chosen_engine: str
+    info_complete: bool
 
 WELCOME_MESSAGE = """Welcome to Content Engine
 
