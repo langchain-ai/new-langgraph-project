@@ -9,6 +9,7 @@ from agent.messaging_framework import MessagingEngineSubgraph
 from agent.competitive_analysis import CompetitiveAnalysisSubgraph
 from agent.marketing_research import MarketingResearchSubgraph
 from agent.content_engine import ContentEngineSubgraph
+from agent.PROMPTS import QuestionAnsweringPrompt, QuestionAnsweringContext, ImplicitRoutingContext, ClassifyInputPrompt
 
 # --------------------
 # LLM Definition
@@ -16,45 +17,34 @@ from agent.content_engine import ContentEngineSubgraph
 llm = init_chat_model(model="openai:gpt-4o")
 
 
+
 # --------------------
-# State Definition
+# State Definition 
 # --------------------
 class RouterState(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]
     routing_type: Optional[Literal["button", "explicit", "implicit", "product_question", "irrelevant", "greeting"]]
     engine_suggestion: Optional[str]
     confirmation_given: Optional[bool]
+    confirmation_message_for_implicit: Optional[str]
 
 
 engine_list = ["MessagingEngine", "CompetitiveAnalysis", "MarketingResearch", "ContentEngine"]
 
 # --------------------
-# Prompt Definition
+# Structured Output Definition
 # --------------------
-prompt = """
-Classify the user’s input as one of:
-- button (clicked a specific UI element)
-- explicit (named a known engine from {engine_list})
-- implicit (ambiguous need, choose the most likely engine from {engine_list})
-- product_question (asking about WinScale or capabilities)
-- irrelevant (off-topic)
-- greeting (greeting the user, helping the user to explicitly state their need or click a button if they are not sure what they want)
 
-Also suggest the most likely engine from {engine_list}, if applicable.
+class ApprovalResponse(BaseModel):
+    approved: bool
+    follow_up_message: Optional[str] = None
 
-User input:
-"{user_message}"
-
-Respond as JSON:
-  "routing_type": "...",
-  "engine_suggestion": "..." (or null)
-  "greeting_message": "..." (or null)
-"""
 
 class RoutingOutput(BaseModel):
     routing_type: Literal["button", "explicit", "implicit", "product_question", "irrelevant", "greeting"]
     engine_suggestion: Optional[Literal["MessagingEngine", "CompetitiveAnalysis", "MarketingResearch", "ContentEngine"]]
     greeting_message: Optional[str]
+    confirmation_message_for_implicit: Optional[str]
 
 
 # --------------------
@@ -63,7 +53,22 @@ class RoutingOutput(BaseModel):
 def classify_input(state: RouterState) -> RouterState:
     #last_user_msg = next((m.content for m in reversed(state["messages"]) if m.type == "human"), "")
     print("**********")
-    prompt_with_user_message = prompt.format(engine_list=engine_list, user_message=state["messages"][-1].content)
+    
+    # Get conversation context (exclude the current message)
+    if len(state["messages"]) > 1:
+        # Get the last 2-3 messages before the current one
+        context_messages = state["messages"][-3:-1] if len(state["messages"]) >= 3 else state["messages"][:-1]
+        context_text = "\n".join([f"{msg.type}: {msg.content}" for msg in context_messages])
+        context_section = f"Previous conversation context:\n{context_text}\n"
+    else:
+        context_section = ""
+
+    prompt_with_user_message = ClassifyInputPrompt.format(
+        engine_list=engine_list,
+        user_message=state["messages"][-1].content,
+        examples=ImplicitRoutingContext,
+        context_section=context_section
+    )
     print("********** Prompt with User Message **********")
     print(prompt_with_user_message)
     llm_with_schema = llm.with_structured_output(schema=RoutingOutput)
@@ -75,7 +80,7 @@ def classify_input(state: RouterState) -> RouterState:
         return {**state, "routing_type": llm_response.routing_type, "messages": AIMessage(content=llm_response.greeting_message) }
     else:
         print("********** Not Greeting **********")
-        return {**state, "routing_type": llm_response.routing_type, "engine_suggestion": llm_response.engine_suggestion}
+        return {**state, "routing_type": llm_response.routing_type, "engine_suggestion": llm_response.engine_suggestion, "confirmation_message_for_implicit": llm_response.confirmation_message_for_implicit}
 
 def direct_router(state: RouterState) -> RouterState:
     engine = state.get("engine_suggestion", "UnknownEngine")
@@ -84,32 +89,67 @@ def direct_router(state: RouterState) -> RouterState:
 
 def ask_for_confirmation(state: RouterState) -> RouterState:
     engine = state.get("engine_suggestion", "some engine")
-    is_approved = interrupt(
-    {
-        "question": f"Just to confirm, do you want to proceed with {engine}?",
-    }
-    )
-    print("********** Is Approved **********")
-    print(is_approved)
-    if is_approved:
+    user_confirmation_message = state.get("confirmation_message_for_implicit", f"Just to confirm, do you want to proceed with {engine}?")
+    print("********** User Confirmation Message **********")
+    print(user_confirmation_message)
+    
+    # Get user response
+    user_response = interrupt({
+        "question": user_confirmation_message,
+    })
+    print("********** User Response **********")
+    print(user_response)
+    
+    # Use LLM to process the approval with structured output
+    last_messages = state["messages"][-2:] if len(state["messages"]) >= 2 else state["messages"]
+    context_messages = "\n".join([f"{msg.type}: {msg.content}" for msg in last_messages])
+    
+    approval_prompt = f"""
+    Analyze the user's response to determine if they approved the routing suggestion.
+    
+    Previous conversation context:
+    {context_messages}
+    
+    User's response: "{user_response}"
+    
+    Return:
+    - approved: true if the user said yes/agreed/approved, false otherwise
+    - follow_up_message: if not approved, provide a helpful message asking what they'd like to do instead
+    """
+    
+    llm_with_approval_schema = llm.with_structured_output(schema=ApprovalResponse)
+    approval_result = llm_with_approval_schema.invoke(approval_prompt)
+    
+    print("********** Approval Result **********")
+    print(approval_result)
+    
+    if approval_result.approved:
         print("********** Approved **********")
-        return Command(goto="DirectRouter")
+        # Add user's approval to the conversation history
+        updated_state = {
+            **state, 
+            "messages": state["messages"] + [HumanMessage(content=user_response)]
+        }
+        return Command(goto="DirectRouter", update=updated_state)
     else:
         print("********** Not Approved **********")
-        return Command(goto=START)
-
+        follow_up = approval_result.follow_up_message or "I understand you'd like to do something different. What would you like to accomplish today?"
+        return {
+            **state, 
+            "messages": state["messages"] + [
+                HumanMessage(content=user_response),
+                AIMessage(content=follow_up)
+            ]
+        }
 
 def answer_system_question(state: RouterState) -> RouterState:
-    qa_prompt = """
-    Sappington Winscale is an AI-powered sales and marketing platform designed to deliver a customer-customized experience at scale. It aims to transform B2B enterprise technology marketing by providing proactive, value-based, and automated solutions. Key components include the Command Center for real-time insights, the Marketing Machine for streamlined workflows and content creation, the Outcome Engine for identifying customer outcomes, and the Messaging Engine for differentiated messaging. The platform seeks to address current challenges of generic, product-focused, and slow marketing efforts by offering tailored content and faster delivery.
-    User question:
-    "{user_question}"
-
-    Answer the question in a few sentences based on the information above. and ask gentle follow up questions if needed.
-    """.format(user_question=state["messages"][-1].content[0]['text'])
+    #qa_prompt = QuestionAnsweringPrompt.format(question=state["messages"][-1].content[0]['text'])
+    user_question = state["messages"][-1].content
+    qna_prompt = QuestionAnsweringPrompt.format(context=QuestionAnsweringContext, question=user_question)
     print("********** QA Prompt **********")
-    print(qa_prompt)
-    llm_response = llm.invoke(qa_prompt)
+    print(user_question)
+    print(qna_prompt)
+    llm_response = llm.invoke(qna_prompt)
     print("********** QA LLM Response **********")
     print(llm_response)
     state["messages"].append(AIMessage(content=llm_response.content))
@@ -167,5 +207,6 @@ builder.add_conditional_edges(
 builder.add_edge("AnswerSystemQuestion", END)
 builder.add_edge("RejectIrrelevant", END)
 builder.add_edge("DirectRouter", END)
+builder.add_edge("UserConfirmation", END)
 
 graph = builder.compile()
