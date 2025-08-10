@@ -53,7 +53,7 @@ For more information on getting started with LangGraph Server, [see here](https:
 
 ## How to customize
 
-1. **Define configurable parameters**: Modify the `Configuration` class in the `graph.py` file to expose the arguments you want to configure. For example, in a chatbot application you may want to define a dynamic system prompt or LLM to use. For more information on configurations in LangGraph, [see here](https://langchain-ai.github.io/langgraph/concepts/low_level/?h=configuration#configuration).
+1. **Define runtime context parameters**: Modify the `Context` class in the `graph.py` file to expose the arguments you want to configure. For example, in a chatbot application you may want to define a dynamic system prompt or LLM to use. For more information on runtime context in LangGraph, [see here](https://langchain-ai.github.io/langgraph/agents/context/?h=context#static-runtime-context).
 
 2. **Extend the graph**: The core logic of the application is defined in [graph.py](./src/agent/graph.py). You can modify this file to add new nodes, edges, or change the flow of information.
 
