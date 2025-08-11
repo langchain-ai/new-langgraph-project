@@ -5,7 +5,6 @@ from langgraph.graph.message import add_messages
 from langgraph.graph import StateGraph, START, END
 from langchain.chat_models import init_chat_model
 from langgraph.types import interrupt, Command
-from agent.utils import get_documents
 from langchain_core.documents import Document
 
 llm = init_chat_model(model="openai:gpt-4o")
@@ -20,24 +19,15 @@ QUESTIONS = [
     "Reference materials (links; optional, comma-separated):",
 ]
 
-QUESTIONS = [
-    "Let's do some competitive analysis. Who are the competitors we want to analyze?",
-    #"What are the priorities of this competitive analysis?",
-    "Focus on a product/service area or the entire company?",
-    "Websites to include (optional, comma-separated):",
-    "Specific keywords/terms (optional, comma-separated):"
-    #"Any special instructions? (optional)",
-    #"Reference materials (links; optional, comma-separated):",
-]
 
 class Answer(BaseModel):
     competitor_name: str
-    #priority : str
+    priority : str
     focus_product_or_service: str
     websites: list[str] # optional
     keywords: list[str] # optional
-    #instructions: str # optional
-    #reference_materials: list[str] # optional
+    instructions: str # optional
+    reference_materials: list[str] # optional
 
 class next_question(BaseModel):
     question_with_greeting: str
