@@ -13,6 +13,7 @@ dependencies = [
     "python-dotenv>=1.0.1",
     "langchain==0.3.27",
     "langchain-openai>=0.3.28",
+    "langchain-community==0.3.27",
     "openai",
     "tiktoken",
     "requests",

@@ -6,6 +6,7 @@ from langgraph.graph import StateGraph, START, END
 from langchain.chat_models import init_chat_model
 from langgraph.types import interrupt, Command
 from langchain_core.documents import Document
+from langchain_community.document_loaders import WebBaseLoader
 
 llm = init_chat_model(model="openai:gpt-4o")
 
@@ -113,7 +114,7 @@ def FillCompetitorDetails(state: CompetitiveAnalysisState):
     }
 
 def fetch_documents(state: CompetitiveAnalysisState):
-    from langchain_community.document_loaders import WebBaseLoader
+    
     loader = WebBaseLoader(state['answers'].websites)
     documents = loader.load()
     documents = [Document(page_content=document.page_content, metadata=document.metadata) for document in documents]
