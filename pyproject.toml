@@ -59,6 +59,7 @@ dependencies = [
     "orjson==3.10.16",
     "ormsgpack==1.10.0",
     "packaging==25.0",
+    "beautifulsoup4==4.13.4",
     "parso==0.8.4",
     "pexpect==4.9.0",
     "platformdirs==4.3.8",
