@@ -597,7 +597,8 @@ def aggregate_results(state: CompetitiveAnalysisState):
         """
     
     return {
-        "aggregate_results": aggregate_results
+        "aggregate_results": aggregate_results,
+        "messages": aggregate_results
     }
 
 # Build the graph with conditional edges
