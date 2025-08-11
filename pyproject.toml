@@ -1,5 +1,5 @@
 [project]
-name = "agent"
+name = "sappington-agent" 
 version = "0.0.1"
 description = "Starter template for making a new agent LangGraph."
 authors = [
@@ -56,7 +56,7 @@ dependencies = [
     "matplotlib-inline==0.1.7",
     "nest-asyncio==1.6.0",
     "openai==1.97.1",
-    "orjson==3.11.1",
+    "orjson==3.10.16",
     "ormsgpack==1.10.0",
     "packaging==25.0",
     "parso==0.8.4",
