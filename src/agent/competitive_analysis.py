@@ -55,17 +55,17 @@ You need to verify the user answer all the questions and if not, ask the next qu
 The list of questions is:
 {QUESTIONS}
 
-Add to the first question you gonna ask this:
-Welcome to the competitive analysis tool I'm going to ask you a few questions to help me understand your business and your competitors.
+Instruction:
+When starting the conversation, greet the user warmly and naturally. Briefly introduce that you’ll be conducting a competitive analysis and will ask a few quick questions to understand their business and competitors. Present the first question immediately after this introduction. Avoid any wording that suggests routing, transferring, or switching to another tool or agent — instead, make it feel like a single, continuous conversation with you.
 
-If the user answered you. say Thanks and blabla and ask the next question.
+After each user response, if the answer is clear and relevant, acknowledge it positively (e.g., “Thanks!” or “Got it, thank you”) and then ask the next question in the list. Maintain the same friendly, conversational tone throughout.
 
 User the history of messages to verify if the user answered all the questions.
 
 return True if the user answered all the questions, otherwise return False.
 """
 
-def CompetitiveAnalysisNode(state: CompetitiveAnalysisState):
+def competitive_analysis_main(state: CompetitiveAnalysisState):
     system_message = SystemMessage(content=system_prompt)
     history = state['messages']
     messages = [system_message] + history
@@ -99,7 +99,7 @@ system_prompt_fill_competitor_details = """
 You need to fill the competitor details based on the user answers.
 """
 
-def FillCompetitorDetails(state: CompetitiveAnalysisState):
+def fill_competitor_details(state: CompetitiveAnalysisState):
     system_message = SystemMessage(content=system_prompt_fill_competitor_details)
     history = state['messages']
     messages = [system_message] + history
@@ -604,8 +604,8 @@ def aggregate_results(state: CompetitiveAnalysisState):
 # Build the graph with conditional edges
 builder = StateGraph(CompetitiveAnalysisState)
 
-builder.add_node("CompetitiveAnalysisNode", CompetitiveAnalysisNode)
-builder.add_node("FillCompetitorDetails", FillCompetitorDetails)
+builder.add_node("CompetitiveAnalysisNode", competitive_analysis_main)
+builder.add_node("FillCompetitorDetails", fill_competitor_details)
 builder.add_node("FetchDocuments", fetch_documents)
 builder.add_node("GetHeadline", get_headline_with_llm)
 builder.add_node("GetValueProposition", get_value_proposition_with_llm)
@@ -642,6 +642,7 @@ builder.add_edge("GetCustomerBenefits", "AggregateResults")
 builder.add_edge("GetSupportBenefits", "AggregateResults")
 builder.add_edge("GetUsecases", "AggregateResults")
 builder.add_edge("GetKeywords", "AggregateResults")
+builder.add_edge("GetSuccessBenefits", "AggregateResults")
 builder.add_edge("AggregateResults", END)
 
 CompetitiveAnalysisSubgraph = builder.compile()
