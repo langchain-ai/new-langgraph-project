@@ -86,6 +86,7 @@ dependencies = [
     "stack-data==0.6.3",
     "starlette==0.47.2",
     "structlog==25.4.0",
+    "tavily-python==0.7.10",
     "tenacity==9.1.2",
     "tiktoken==0.9.0",
     "tornado==6.5.1",
