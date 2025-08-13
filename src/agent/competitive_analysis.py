@@ -12,7 +12,7 @@ llm = init_chat_model(model="openai:gpt-4o")
 
 QUESTIONS = [
     "Let's do some competitive analysis. Who are the competitors we want to analyze?",
-    "What are the priorities of this competitive analysis?",
+    #"What are the priorities of this competitive analysis?",
     "Focus on a product/service area or the entire company?",
     "Websites to include (optional, comma-separated):",
     "Specific keywords/terms (optional, comma-separated):",
@@ -20,19 +20,27 @@ QUESTIONS = [
     "Reference materials (links; optional, comma-separated):",
 ]
 
-
 class Answer(BaseModel):
     competitor_name: str
-    priority : str
     focus_product_or_service: str
     websites: list[str] # optional
     keywords: list[str] # optional
     instructions: str # optional
     reference_materials: list[str] # optional
 
-class next_question(BaseModel):
-    question_with_greeting: str
-    answered_all_questions: bool
+class PartialAnswers(BaseModel):
+    competitor_name: Optional[str] = None
+    focus_product_or_service: Optional[str] = None
+    websites: Optional[list[str]] = None
+    keywords: Optional[list[str]] = None
+    instructions: Optional[str] = None
+    reference_materials: Optional[list[str]] = None
+
+class QuestionResponse(BaseModel):
+    extracted_answers: PartialAnswers
+    still_need_answers_for: list[str]  # List of field names still needed
+    next_question: Optional[str] = None
+    conversation_complete: bool = False
 
 class CompetitiveAnalysisState(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]
@@ -50,68 +58,85 @@ class CompetitiveAnalysisState(TypedDict):
     keywords: Optional[str]
 
 
+# Updated system prompt
 system_prompt = f"""
-You need to verify the user answer all the questions and if not, ask the next question. It is a part of a conversation so keep the greeting in your question.
-The list of questions is:
+You are conducting a competitive analysis interview. Extract any relevant information from the user's response that answers any of these questions:
+
 {QUESTIONS}
 
-Add to the first question you gonna ask this:
-Welcome to the competitive analysis tool I'm going to ask you a few questions to help me understand your business and your competitors.
+From the user's message, extract any information that corresponds to:
+- competitor_name: The name of the competitor
+- focus_product_or_service: Main product/service focus
+- websites: Any website URLs mentioned
+- keywords: Relevant keywords or search terms
+- instructions: Special instructions or notes
+- reference_materials: Documents, links, or materials referenced
 
-If the user answered you. say Thanks and blabla and ask the next question.
+Based on what you've extracted and the conversation history, determine:
+1. What information is still missing
+2. What the next logical question should be
+3. Whether the conversation is complete
 
-User the history of messages to verify if the user answered all the questions.
-
-return True if the user answered all the questions, otherwise return False.
+Be conversational and acknowledge what the user provided before asking for missing information.
 """
 
-def CompetitiveAnalysisNode(state: CompetitiveAnalysisState):
+def competitive_analysis_main(state: CompetitiveAnalysisState):
     system_message = SystemMessage(content=system_prompt)
     history = state['messages']
     messages = [system_message] + history
     
-    llm_with_structured_output = llm.with_structured_output(next_question)
-    ai_message = llm_with_structured_output.invoke(messages)
+    llm_with_structured_output = llm.with_structured_output(QuestionResponse)
+    response = llm_with_structured_output.invoke(messages)
     
-    if not ai_message.answered_all_questions:
-        # Add the AI question to state before interrupting
-        new_ai_message = AIMessage(content=ai_message.question_with_greeting)
+    # Update the answers with extracted information
+    current_answers = state.get('answers', Answer(
+        competitor_name="", focus_product_or_service="",
+        websites=[], keywords=[], instructions="", reference_materials=[]
+    ))
+    
+    # Merge extracted answers with existing ones
+    updated_answers = update_answers(current_answers, response.extracted_answers)
+    
+    if not response.conversation_complete and response.next_question:
+        new_ai_message = AIMessage(content=response.next_question)
+        user_response = interrupt({"question": response.next_question})
         
-        # Update state and interrupt
-        user_response = interrupt({
-            "question": ai_message.question_with_greeting,
-        })
-        
-        # Return updated state with both AI question and human response
-        # DON'T use Command(goto=...) - just update the state and let the conditional edge handle routing
         return {
             "messages": [new_ai_message, HumanMessage(content=user_response)],
-            "user_answered_all_questions": False  # Explicitly set this
+            "answers": updated_answers,
+            "user_answered_all_questions": False
         }
     
-    # All questions answered
     return {
-        "messages": [AIMessage(content="Thanks! All questions completed.")],
-        "user_answered_all_questions": True  # This will trigger the conditional edge
+        "messages": [AIMessage(content="Thanks! All information collected.")],
+        "answers": updated_answers,
+        "user_answered_all_questions": True
     }
 
 system_prompt_fill_competitor_details = """
 You need to fill the competitor details based on the user answers.
 """
 
-def FillCompetitorDetails(state: CompetitiveAnalysisState):
-    system_message = SystemMessage(content=system_prompt_fill_competitor_details)
-    history = state['messages']
-    messages = [system_message] + history
-
-    llm_with_structured_output = llm.with_structured_output(Answer)
-    ai_message = llm_with_structured_output.invoke(messages)
-
-    return {
-        "messages": [AIMessage(content=ai_message.competitor_name)],
-        "user_answered_all_questions": True,
-        "answers": ai_message
-    }
+def update_answers(current: Answer, new_partial: PartialAnswers) -> Answer:
+    """Merge new partial answers with existing complete answers"""
+    updates = {}
+    
+    for field, value in new_partial.model_dump().items():
+        if value is not None:
+            if field in ['websites', 'keywords', 'reference_materials']:
+                # For list fields, extend existing lists
+                current_list = getattr(current, field) or []
+                if isinstance(value, list):
+                    updates[field] = list(set(current_list + value))  # Remove duplicates
+                else:
+                    updates[field] = current_list + [value] if value not in current_list else current_list
+            else:
+                # For string fields, update if not already set or if new value is more complete
+                current_value = getattr(current, field)
+                if not current_value or len(str(value)) > len(str(current_value)):
+                    updates[field] = value
+    
+    return current.model_copy(update=updates)
 
 def fetch_documents(state: CompetitiveAnalysisState):
     
@@ -595,17 +620,17 @@ def aggregate_results(state: CompetitiveAnalysisState):
         Keywords
         {state['keywords']}
         """
-    
+    aggregate_results_message = AIMessage(content=aggregate_results)
     return {
         "aggregate_results": aggregate_results,
-        "messages": aggregate_results
+        "messages": [aggregate_results_message]
     }
 
 # Build the graph with conditional edges
 builder = StateGraph(CompetitiveAnalysisState)
 
-builder.add_node("CompetitiveAnalysisNode", CompetitiveAnalysisNode)
-builder.add_node("FillCompetitorDetails", FillCompetitorDetails)
+builder.add_node("CompetitiveAnalysisNode", competitive_analysis_main)
+#אני builder.add_node("FillCompetitorDetails", fill_competitor_details)
 builder.add_node("FetchDocuments", fetch_documents)
 builder.add_node("GetHeadline", get_headline_with_llm)
 builder.add_node("GetValueProposition", get_value_proposition_with_llm)
@@ -624,11 +649,11 @@ builder.add_conditional_edges(
     should_continue,
     {
         "continue_questions": "CompetitiveAnalysisNode",  # Loop back to ask more questions
-        "fill_details": "FillCompetitorDetails"  # All questions answered, move to next step
+        "fill_details": "FetchDocuments"  # All questions answered, move to next step
     }
 )
 
-builder.add_edge("FillCompetitorDetails", "FetchDocuments")
+#builder.add_edge("FillCompetitorDetails", "FetchDocuments")
 builder.add_edge("FetchDocuments", "GetHeadline")
 builder.add_edge("FetchDocuments", "GetCustomerBenefits")
 builder.add_edge("FetchDocuments", "GetValueProposition")
@@ -642,6 +667,7 @@ builder.add_edge("GetCustomerBenefits", "AggregateResults")
 builder.add_edge("GetSupportBenefits", "AggregateResults")
 builder.add_edge("GetUsecases", "AggregateResults")
 builder.add_edge("GetKeywords", "AggregateResults")
+builder.add_edge("GetSuccessBenefits", "AggregateResults")
 builder.add_edge("AggregateResults", END)
 
 CompetitiveAnalysisSubgraph = builder.compile()

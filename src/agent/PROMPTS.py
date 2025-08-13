@@ -131,51 +131,40 @@ ImplicitRoutingContext = """
 IMPLICITLY CASE THREE REQUESTS & RESPONSES
 
 Request: Create a campaign
-Response: We’ll create your campaign as a bundle of assets using the ContentEngine—this may include a case study, blog, one-pager, or eBook.
-I’ll route you there now.
-Please answer Yes or No.
+Response: Great, we’ll create your campaign as a bundle of assets that could include a case study, blog, one-pager, or eBook. Let’s start by deciding which assets you want to include. Sound good?
 
 ⸻
 
 Request: Create a competitive analysis and messaging framework
-Response: Competitive analysis is built into the Messaging Framework flow, where we gather audience, industry, and competitive insights to shape messaging.
-I’ll route you to the MessagingFramework engine to begin.
-Please answer Yes or No.
+Response: Great, we’ll shape your messaging using competitive, audience, and industry insights. Let’s start with the competitive analysis and then build the messaging framework around it. Sound good?
 
 ⸻
 
 Request: Create a case study and blog
-Response: The ContentEngine supports both assets. We’ll begin with the case study and use it as a base for the blog.
-I’ll route you there now.
-Please answer Yes or No.
+Response: Great, we can do both. We’ll start with the case study, then adapt it into a blog so the message is consistent. Sound good?
 
 ⸻
 
 Request: Create a data sheet
-Response: We’ll generate a one-pager—our standard for data sheets—focused on audience, industry, or product.
-I’ll route you to the ContentEngine.
-Please answer Yes or No.
+Response: Great, we’ll create a one-pager—our standard format for data sheets—tailored to your audience, industry, or product. Sound good?
 
 ⸻
 
 Request: Create a BOM
-Response: A BOM (bill of materials) includes grouped assets like eBooks, case studies, and social content. We’ll tailor it in the ContentEngine.
-I’ll route you there now.
-Please answer Yes or No.
+Response: Great, we’ll prepare a bill of materials with grouped assets like eBooks, case studies, and social content, customized for your needs. Sound good?
 
 ⸻
 
 Request: Create a buyer’s journey for a mid-market CIO
-Response: We’ll run an audience research flow focused on mid-market CIOs—their buying habits, situation, and decision dynamics—using the MarketingResearch engine.
-I’ll route you there now.
-Please answer Yes or No.
+Response: Great, we’ll map out the buying habits, situation, and decision-making process for mid-market CIOs, and then use that to guide your strategy. Sound good?
+
 """
 
 
 ClassifyInputPrompt = """
 Classify the user's input as one of:
 - button (clicked a specific UI element)
-- explicit (named a known engine from {engine_list})
+- explicit (named a known engine from {engine_list}).
 - implicit (ambiguous need, choose the most likely engine from {engine_list})
 - product_question (asking about WinScale or capabilities)
 - irrelevant (off-topic)

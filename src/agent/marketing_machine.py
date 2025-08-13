@@ -29,7 +29,7 @@ class RouterState(TypedDict):
     confirmation_message_for_implicit: Optional[str]
 
 
-engine_list = ["MessagingEngine", "CompetitiveAnalysis", "MarketingResearch", "ContentEngine"]
+engine_list = ["Messaging Framework", "Competitive Analysis", "Marketing Research", "Content Engine", "Messaging Engine"]
 
 # --------------------
 # Structured Output Definition
@@ -42,7 +42,7 @@ class ApprovalResponse(BaseModel):
 
 class RoutingOutput(BaseModel):
     routing_type: Literal["button", "explicit", "implicit", "product_question", "irrelevant", "greeting"]
-    engine_suggestion: Optional[Literal["MessagingEngine", "CompetitiveAnalysis", "MarketingResearch", "ContentEngine"]]
+    engine_suggestion: Optional[Literal["Messaging Framework", "Competitive Analysis", "Marketing Research", "Content Engine", "Messaging Engine"]]
     greeting_message: Optional[str]
     confirmation_message_for_implicit: Optional[str]
 
@@ -197,10 +197,11 @@ builder.add_conditional_edges(
     "DirectRouter",
     lambda state: state["engine_suggestion"],
     {
-        "MessagingEngine": "MessagingEngine",
-        "CompetitiveAnalysis": "CompetitiveAnalysis",
-        "MarketingResearch": "MarketingResearch",
-        "ContentEngine": "ContentEngine"
+        "Messaging Framework": "MessagingEngine",
+        "Competitive Analysis": "CompetitiveAnalysis",
+        "Marketing Research": "MarketingResearch",
+        "Content Engine": "ContentEngine",
+        "Messaging Engine": "MessagingEngine"
     }
 )
 
