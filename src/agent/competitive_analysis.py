@@ -1,4 +1,5 @@
-from typing import List, Optional, Literal,Annotated, TypedDict
+from typing import List, Optional, Literal,Annotated
+from typing_extensions import TypedDict
 from pydantic import BaseModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, AnyMessage
 from langgraph.graph.message import add_messages
@@ -7,8 +8,16 @@ from langchain.chat_models import init_chat_model
 from langgraph.types import interrupt, Command
 from langchain_core.documents import Document
 from langchain_community.document_loaders import WebBaseLoader
+from tavily import TavilyClient
+from operator import add
+import os
+
 
 llm = init_chat_model(model="openai:gpt-4o")
+tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
+
+
+
 
 QUESTIONS = [
     "Let's do some competitive analysis. Who are the competitors we want to analyze?",
@@ -39,14 +48,14 @@ class PartialAnswers(BaseModel):
 class QuestionResponse(BaseModel):
     extracted_answers: PartialAnswers
     still_need_answers_for: list[str]  # List of field names still needed
-    next_question: Optional[str] = None
+    next_message_with_question_and_greeting: Optional[str] = None
     conversation_complete: bool = False
 
 class CompetitiveAnalysisState(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]
     answers: Answer
     user_answered_all_questions: bool
-    documents: Optional[list[Document]]
+    documents: Optional[Annotated[list[str], add]]
     main_idea: Optional[str]
     headline: Optional[str]
     value_proposition: Optional[str]
@@ -78,6 +87,10 @@ Based on what you've extracted and the conversation history, determine:
 3. Whether the conversation is complete
 
 Be conversational and acknowledge what the user provided before asking for missing information.
+
+Important:
+- Based on the previous message, be greeting and friendly and make it conversational.
+- Add the greeting to the beginning of the message.
 """
 
 def competitive_analysis_main(state: CompetitiveAnalysisState):
@@ -97,9 +110,9 @@ def competitive_analysis_main(state: CompetitiveAnalysisState):
     # Merge extracted answers with existing ones
     updated_answers = update_answers(current_answers, response.extracted_answers)
     
-    if not response.conversation_complete and response.next_question:
-        new_ai_message = AIMessage(content=response.next_question)
-        user_response = interrupt({"question": response.next_question})
+    if not response.conversation_complete and response.next_message_with_question_and_greeting:
+        new_ai_message = AIMessage(content=response.next_message_with_question_and_greeting)
+        user_response = interrupt({"question": response.next_message_with_question_and_greeting})
         
         return {
             "messages": [new_ai_message, HumanMessage(content=user_response)],
@@ -138,23 +151,43 @@ def update_answers(current: Answer, new_partial: PartialAnswers) -> Answer:
     
     return current.model_copy(update=updates)
 
+def route_to_documents_source(state: CompetitiveAnalysisState):
+    if state['answers'].websites:
+        return "fetch_documents"
+    else:
+        return "web_search"
+
+def web_search(state: CompetitiveAnalysisState):
+    query = f"{state['answers'].competitor_name} {state['answers'].focus_product_or_service}"
+
+    response = tavily_client.search(
+        query=query
+    )
+    
+    documents = [Document(page_content=result['content'], metadata=result) for result in response['results']]
+
+    return {
+        "documents": documents
+    }
+
 def fetch_documents(state: CompetitiveAnalysisState):
     
     loader = WebBaseLoader(state['answers'].websites)
     documents = loader.load()
     documents = [Document(page_content=document.page_content, metadata=document.metadata) for document in documents]
-    #documents = await get_documents(state['answers'].websites)
+
     return {
         "documents": documents
     }
 
 # Conditional routing function
-def should_continue(state: CompetitiveAnalysisState) -> Literal["continue_questions", "fill_details"]:
-    if state.get("user_answered_all_questions", False):
-        return "fill_details"
-    else:
+def should_continue_and_route(state: CompetitiveAnalysisState) -> Literal["continue_questions", "fetch_documents", "web_search"]:
+    if not state.get("user_answered_all_questions", False):
         return "continue_questions"
-
+    elif state['answers'].websites:
+        return "fetch_documents" 
+    else:
+        return "web_search"
 
 def get_headline_with_llm(state: CompetitiveAnalysisState):
     headline_system_prompt = """
@@ -632,6 +665,7 @@ builder = StateGraph(CompetitiveAnalysisState)
 builder.add_node("CompetitiveAnalysisNode", competitive_analysis_main)
 #אני builder.add_node("FillCompetitorDetails", fill_competitor_details)
 builder.add_node("FetchDocuments", fetch_documents)
+builder.add_node("WebSearch", web_search)
 builder.add_node("GetHeadline", get_headline_with_llm)
 builder.add_node("GetValueProposition", get_value_proposition_with_llm)
 builder.add_node("GetCustomerBenefits", get_customer_benefits_with_llm)
@@ -643,17 +677,24 @@ builder.add_node("AggregateResults", aggregate_results)
 
 builder.add_edge(START, "CompetitiveAnalysisNode")
 
-# Use conditional edge instead of fixed edge
+
 builder.add_conditional_edges(
     "CompetitiveAnalysisNode",
-    should_continue,
+    should_continue_and_route,
     {
-        "continue_questions": "CompetitiveAnalysisNode",  # Loop back to ask more questions
-        "fill_details": "FetchDocuments"  # All questions answered, move to next step
+        "continue_questions": "CompetitiveAnalysisNode",
+        "fetch_documents": "FetchDocuments",
+        "web_search": "WebSearch" 
     }
 )
 
-#builder.add_edge("FillCompetitorDetails", "FetchDocuments")
+builder.add_edge("WebSearch", "GetHeadline")
+builder.add_edge("WebSearch", "GetCustomerBenefits")
+builder.add_edge("WebSearch", "GetValueProposition")
+builder.add_edge("WebSearch", "GetSupportBenefits")
+builder.add_edge("WebSearch", "GetUsecases")
+builder.add_edge("WebSearch", "GetSuccessBenefits")
+builder.add_edge("WebSearch", "GetKeywords")
 builder.add_edge("FetchDocuments", "GetHeadline")
 builder.add_edge("FetchDocuments", "GetCustomerBenefits")
 builder.add_edge("FetchDocuments", "GetValueProposition")
