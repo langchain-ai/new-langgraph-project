@@ -5,7 +5,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, AnyM
 from langgraph.graph.message import add_messages
 from langgraph.graph import StateGraph, START, END
 from langchain.chat_models import init_chat_model
-from langgraph.types import interrupt, Command
+from langgraph.types import interrupt, Command, Send
 from langchain_core.documents import Document
 from langchain_community.document_loaders import WebBaseLoader
 from tavily import TavilyClient
@@ -15,9 +15,6 @@ import os
 
 llm = init_chat_model(model="openai:gpt-4o")
 tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
-
-
-
 
 QUESTIONS = [
     "Let's do some competitive analysis. Who are the competitors we want to analyze?",
@@ -29,8 +26,32 @@ QUESTIONS = [
     "Reference materials (links; optional, comma-separated):",
 ]
 
-class Answer(BaseModel):
+class CompetitorAnalysis(BaseModel):
     competitor_name: str
+    focus_product_or_service: str
+    websites: list[str]
+    keywords: list[str]  # Input keywords for analysis
+    instructions: str
+    reference_materials: list[str]
+    main_idea: Optional[str] = None
+    headline: Optional[str] = None
+    value_proposition: Optional[str] = None
+    customer_benefits: Optional[str] = None
+    support_benefits: Optional[str] = None
+    usecases: Optional[str] = None
+    success_benefits: Optional[str] = None
+    keywords_analysis: Optional[str] = None  # Output from LLM keyword analysis
+    documents: list[str]
+
+
+class Competitors(BaseModel):
+    competitors: list[CompetitorAnalysis]
+
+class NumberOfCompetitors(BaseModel):
+    number_of_competitors: int
+
+class Answer(BaseModel):
+    competitors_name: list[str]
     focus_product_or_service: str
     websites: list[str] # optional
     keywords: list[str] # optional
@@ -38,7 +59,7 @@ class Answer(BaseModel):
     reference_materials: list[str] # optional
 
 class PartialAnswers(BaseModel):
-    competitor_name: Optional[str] = None
+    competitors_name: Optional[list[str]] = None
     focus_product_or_service: Optional[str] = None
     websites: Optional[list[str]] = None
     keywords: Optional[list[str]] = None
@@ -56,18 +77,8 @@ class CompetitiveAnalysisState(TypedDict):
     answers: Answer
     user_answered_all_questions: bool
     documents: Optional[Annotated[list[str], add]]
-    main_idea: Optional[str]
-    headline: Optional[str]
-    value_proposition: Optional[str]
-    aggregate_results: Optional[str]
-    customer_benefits: Optional[str]
-    support_benefits: Optional[str]
-    usecases: Optional[str]
-    success_benefits: Optional[str]
-    keywords: Optional[str]
+    competitors: list[CompetitorAnalysis]
 
-
-# Updated system prompt
 system_prompt = f"""
 You are conducting a competitive analysis interview. Extract any relevant information from the user's response that answers any of these questions:
 
@@ -103,7 +114,7 @@ def competitive_analysis_main(state: CompetitiveAnalysisState):
     
     # Update the answers with extracted information
     current_answers = state.get('answers', Answer(
-        competitor_name="", focus_product_or_service="",
+        competitors_name=[], focus_product_or_service="",
         websites=[], keywords=[], instructions="", reference_materials=[]
     ))
     
@@ -130,6 +141,46 @@ system_prompt_fill_competitor_details = """
 You need to fill the competitor details based on the user answers.
 """
 
+def transform_answers_to_list_of_competitors_with_llm(state: CompetitiveAnalysisState) -> CompetitiveAnalysisState:
+    number_of_competitors = len(state['answers'].competitors_name)
+    competitors = []
+    for i in range(number_of_competitors):
+
+        system_prompt = """
+        You need to fill the competitor details based on the user answers.
+        You need to fill the websites only for the relevant competitor.
+
+        For the next competitor:
+        {competitor_name}
+    
+        """.format(competitor_name=state['answers'].competitors_name[i])
+
+
+        system_message = SystemMessage(content=system_prompt)
+        human_message = HumanMessage(content=state['answers'].model_dump_json())
+        print(system_message)
+        print(human_message)
+        llm_with_structured_output = llm.with_structured_output(CompetitorAnalysis)
+        response = llm_with_structured_output.invoke([system_message, human_message])
+        
+        competitor = CompetitorAnalysis(
+            competitor_name=response.competitor_name,
+            focus_product_or_service=response.focus_product_or_service,
+            websites=response.websites,
+            keywords=response.keywords,
+            instructions=response.instructions,
+            reference_materials=response.reference_materials,
+            documents=[]
+        )
+        competitors.append(competitor)
+
+    return {
+        "competitors": competitors
+    }
+
+def continue_to_competitor_analysis_generation(state: CompetitiveAnalysisState):
+    return [Send("route_to_documents_source", {"competitor": competitor}) for competitor in state['competitors']]
+
 def update_answers(current: Answer, new_partial: PartialAnswers) -> Answer:
     """Merge new partial answers with existing complete answers"""
     updates = {}
@@ -151,14 +202,16 @@ def update_answers(current: Answer, new_partial: PartialAnswers) -> Answer:
     
     return current.model_copy(update=updates)
 
-def route_to_documents_source(state: CompetitiveAnalysisState):
-    if state['answers'].websites:
+def route_to_documents_source(state):
+    competitor = state['competitor']
+    if competitor.websites and len(competitor.websites) > 0:
         return "fetch_documents"
     else:
         return "web_search"
 
-def web_search(state: CompetitiveAnalysisState):
-    query = f"{state['answers'].competitor_name} {state['answers'].focus_product_or_service}"
+def web_search(state):
+    competitor = state['competitor']
+    query = f"{competitor.competitor_name} {competitor.focus_product_or_service}"
 
     response = tavily_client.search(
         query=query
@@ -170,9 +223,9 @@ def web_search(state: CompetitiveAnalysisState):
         "documents": documents
     }
 
-def fetch_documents(state: CompetitiveAnalysisState):
-    
-    loader = WebBaseLoader(state['answers'].websites)
+def fetch_documents(state):
+    competitor = state['competitor']
+    loader = WebBaseLoader(competitor.websites)
     documents = loader.load()
     documents = [Document(page_content=document.page_content, metadata=document.metadata) for document in documents]
 
@@ -180,16 +233,13 @@ def fetch_documents(state: CompetitiveAnalysisState):
         "documents": documents
     }
 
-# Conditional routing function
-def should_continue_and_route(state: CompetitiveAnalysisState) -> Literal["continue_questions", "fetch_documents", "web_search"]:
+def should_continue_and_route(state: CompetitiveAnalysisState) -> Literal["continue_questions", "TransformAnswersToListOfCompetitors"]:
     if not state.get("user_answered_all_questions", False):
         return "continue_questions"
-    elif state['answers'].websites:
-        return "fetch_documents" 
     else:
-        return "web_search"
+        return "TransformAnswersToListOfCompetitors"
 
-def get_headline_with_llm(state: CompetitiveAnalysisState):
+def get_headline_with_llm(state):
     headline_system_prompt = """
     You are a marketing analysit, your job is to only copy and paste text from a copmetitor website and EXTRACT EXACT TEXTS about the competing product and company. DO NOT EDIT THE TEXT OR SUMMARIZE IT JUST COPY PASTE.
 
@@ -232,8 +282,9 @@ def get_headline_with_llm(state: CompetitiveAnalysisState):
     DO NOT EDIT THE TEXT OR SUMMARIZE IT JUST COPY PASTE.
     """
 
-    headline_prompt = headline_prompt.replace("{{company_name}}", state['answers'].competitor_name)
-    headline_prompt = headline_prompt.replace("{{product_name}}", state['answers'].focus_product_or_service)
+    competitor = state['competitor']
+    headline_prompt = headline_prompt.replace("{{company_name}}", competitor.competitor_name)
+    headline_prompt = headline_prompt.replace("{{product_name}}", competitor.focus_product_or_service)
     headline_prompt = headline_prompt.replace("{{product_text}}", state['documents'][0].page_content)
 
     print(headline_prompt)
@@ -251,7 +302,7 @@ def get_headline_with_llm(state: CompetitiveAnalysisState):
         "headline": ai_message.headline
     }
 
-def get_value_proposition_with_llm(state: CompetitiveAnalysisState):
+def get_value_proposition_with_llm(state):
     value_system_prompt = """
     You are a marketing analysit, your job is to only copy and paste text from a copmetitor website and EXTRACT EXACT TEXTS about the competing product and company. DO NOT EDIT THE TEXT OR SUMMARIZE IT JUST COPY PASTE.
 
@@ -288,8 +339,9 @@ def get_value_proposition_with_llm(state: CompetitiveAnalysisState):
     DO NOT EDIT THE TEXT OR SUMMARIZE IT JUST COPY PASTE.
     """
 
-    value_prompt = value_prompt.replace("{{company_name}}", state['answers'].competitor_name)
-    value_prompt = value_prompt.replace("{{product_name}}", state['answers'].focus_product_or_service)
+    competitor = state['competitor']
+    value_prompt = value_prompt.replace("{{company_name}}", competitor.competitor_name)
+    value_prompt = value_prompt.replace("{{product_name}}", competitor.focus_product_or_service)
     value_prompt = value_prompt.replace("{{product_text}}", state['documents'][0].page_content)
 
     print(value_prompt)
@@ -305,7 +357,7 @@ def get_value_proposition_with_llm(state: CompetitiveAnalysisState):
         "value_proposition": ai_message.value_proposition
     }
 
-def get_customer_benefits_with_llm(state: CompetitiveAnalysisState):
+def get_customer_benefits_with_llm(state):
     customer_benefits_system_prompt = """
     You are a marketing analysit, your job is to only copy and paste text from a copmetitor website and EXTRACT EXACT TEXTS about the competing product and company. DO NOT EDIT THE TEXT OR SUMMARIZE IT JUST COPY PASTE.
 
@@ -347,8 +399,9 @@ def get_customer_benefits_with_llm(state: CompetitiveAnalysisState):
     DO NOT EDIT THE TEXT OR SUMMARIZE IT JUST COPY PASTE.
     """
 
-    customer_benefits_prompt = customer_benefits_prompt.replace("{{company_name}}", state['answers'].competitor_name)
-    customer_benefits_prompt = customer_benefits_prompt.replace("{{product_name}}", state['answers'].focus_product_or_service)
+    competitor = state['competitor']
+    customer_benefits_prompt = customer_benefits_prompt.replace("{{company_name}}", competitor.competitor_name)
+    customer_benefits_prompt = customer_benefits_prompt.replace("{{product_name}}", competitor.focus_product_or_service)
     customer_benefits_prompt = customer_benefits_prompt.replace("{{product_text}}", state['documents'][0].page_content)
 
     print(customer_benefits_prompt)
@@ -365,7 +418,7 @@ def get_customer_benefits_with_llm(state: CompetitiveAnalysisState):
         "customer_benefits": ai_message.customer_benefits
     }
 
-def get_support_benefits_with_llm(state: CompetitiveAnalysisState):
+def get_support_benefits_with_llm(state):
     support_benefits_system_prompt = """
     You are a marketing analysit, your job is to only copy and paste text from a copmetitor website and EXTRACT EXACT TEXTS about the competing product and company. DO NOT EDIT THE TEXT OR SUMMARIZE IT JUST COPY PASTE.
 
@@ -413,8 +466,9 @@ def get_support_benefits_with_llm(state: CompetitiveAnalysisState):
     DO NOT EDIT THE TEXT OR SUMMARIZE IT JUST COPY PASTE.
     """
 
-    support_benefits_prompt = support_benefits_prompt.replace("{{company_name}}", state['answers'].competitor_name)
-    support_benefits_prompt = support_benefits_prompt.replace("{{product_name}}", state['answers'].focus_product_or_service)
+    competitor = state['competitor']
+    support_benefits_prompt = support_benefits_prompt.replace("{{company_name}}", competitor.competitor_name)
+    support_benefits_prompt = support_benefits_prompt.replace("{{product_name}}", competitor.focus_product_or_service)
     support_benefits_prompt = support_benefits_prompt.replace("{{product_text}}", state['documents'][0].page_content)
 
     print(support_benefits_prompt)
@@ -431,7 +485,7 @@ def get_support_benefits_with_llm(state: CompetitiveAnalysisState):
         "support_benefits": ai_message.support_benefits
     }
 
-def get_usecases_with_llm(state: CompetitiveAnalysisState):
+def get_usecases_with_llm(state):
     usecases_system_prompt = """
     You are a marketing analysit, your job is to only copy and paste text from a copmetitor website and EXTRACT EXACT TEXTS about the competing product and company. DO NOT EDIT THE TEXT OR SUMMARIZE IT JUST COPY PASTE.
 
@@ -474,8 +528,9 @@ def get_usecases_with_llm(state: CompetitiveAnalysisState):
     IF NO USE CASE PRESENT RETURN NONE
     """
 
-    usecases_benefits_prompt = usecases_benefits_prompt.replace("{{company_name}}", state['answers'].competitor_name)
-    usecases_benefits_prompt = usecases_benefits_prompt.replace("{{product_name}}", state['answers'].focus_product_or_service)
+    competitor = state['competitor']
+    usecases_benefits_prompt = usecases_benefits_prompt.replace("{{company_name}}", competitor.competitor_name)
+    usecases_benefits_prompt = usecases_benefits_prompt.replace("{{product_name}}", competitor.focus_product_or_service)
     usecases_benefits_prompt = usecases_benefits_prompt.replace("{{product_text}}", state['documents'][0].page_content)
 
     print(usecases_benefits_prompt)
@@ -492,7 +547,7 @@ def get_usecases_with_llm(state: CompetitiveAnalysisState):
         "usecases": ai_message.usecases
     }
 
-def get_success_with_llm(state: CompetitiveAnalysisState):
+def get_success_with_llm(state):
     success_system_prompt = """
     You are a marketing analysit, your job is to only copy and paste text from a copmetitor website and EXTRACT EXACT TEXTS about the competing product and company. DO NOT EDIT THE TEXT OR SUMMARIZE IT JUST COPY PASTE.
 
@@ -542,8 +597,9 @@ def get_success_with_llm(state: CompetitiveAnalysisState):
     IF NO USE CASE PRESENT RETURN NONE
     """
 
-    success_benefits_prompt = success_benefits_prompt.replace("{{company_name}}", state['answers'].competitor_name)
-    success_benefits_prompt = success_benefits_prompt.replace("{{product_name}}", state['answers'].focus_product_or_service)
+    competitor = state['competitor']
+    success_benefits_prompt = success_benefits_prompt.replace("{{company_name}}", competitor.competitor_name)
+    success_benefits_prompt = success_benefits_prompt.replace("{{product_name}}", competitor.focus_product_or_service)
     success_benefits_prompt = success_benefits_prompt.replace("{{product_text}}", state['documents'][0].page_content)
 
     print(success_benefits_prompt)
@@ -560,7 +616,7 @@ def get_success_with_llm(state: CompetitiveAnalysisState):
         "success_benefits": ai_message.success_benefits
     }
 
-def get_keywords_with_llm(state: CompetitiveAnalysisState):
+def get_keywords_with_llm(state):
     keywords_system_prompt = """
     You are a marketing analysit, your job is to only copy and paste text from a copmetitor website and EXTRACT EXACT TEXTS about the competing product and company. DO NOT EDIT THE TEXT OR SUMMARIZE IT JUST COPY PASTE.
 
@@ -611,10 +667,11 @@ def get_keywords_with_llm(state: CompetitiveAnalysisState):
     IF NO USE CASE PRESENT RETURN NONE
     """
 
-    keywords_prompt = keywords_prompt.replace("{{company_name}}", state['answers'].competitor_name)
-    keywords_prompt = keywords_prompt.replace("{{product_name}}", state['answers'].focus_product_or_service)
+    competitor = state['competitor']
+    keywords_prompt = keywords_prompt.replace("{{company_name}}", competitor.competitor_name)
+    keywords_prompt = keywords_prompt.replace("{{product_name}}", competitor.focus_product_or_service)
     keywords_prompt = keywords_prompt.replace("{{product_text}}", state['documents'][0].page_content)
-    keywords_prompt = keywords_prompt.replace("{{keywords}}", ", ".join(state['answers'].keywords))
+    keywords_prompt = keywords_prompt.replace("{{keywords}}", ", ".join(competitor.keywords))
 
     print(keywords_prompt)
 
@@ -627,10 +684,10 @@ def get_keywords_with_llm(state: CompetitiveAnalysisState):
     print(ai_message)
 
     return {
-        "keywords": ai_message.keywords
+        "keywords_analysis": ai_message.keywords
     }
 
-def aggregate_results(state: CompetitiveAnalysisState):
+def aggregate_results(state):
     aggregate_results = f"""Main ideas/Headlines:
         {state['main_idea']}
         {state['headline']}
@@ -651,7 +708,7 @@ def aggregate_results(state: CompetitiveAnalysisState):
         {state['success_benefits']}
 
         Keywords
-        {state['keywords']}
+        {state['keywords_analysis']}
         """
     aggregate_results_message = AIMessage(content=aggregate_results)
     return {
@@ -663,7 +720,9 @@ def aggregate_results(state: CompetitiveAnalysisState):
 builder = StateGraph(CompetitiveAnalysisState)
 
 builder.add_node("CompetitiveAnalysisNode", competitive_analysis_main)
-#אני builder.add_node("FillCompetitorDetails", fill_competitor_details)
+builder.add_node("TransformAnswersToListOfCompetitors", transform_answers_to_list_of_competitors_with_llm)
+builder.add_node("ContinueToCompetitorAnalysisGeneration", continue_to_competitor_analysis_generation)
+builder.add_node("route_to_documents_source", route_to_documents_source)
 builder.add_node("FetchDocuments", fetch_documents)
 builder.add_node("WebSearch", web_search)
 builder.add_node("GetHeadline", get_headline_with_llm)
@@ -683,11 +742,23 @@ builder.add_conditional_edges(
     should_continue_and_route,
     {
         "continue_questions": "CompetitiveAnalysisNode",
-        "fetch_documents": "FetchDocuments",
-        "web_search": "WebSearch" 
+        "TransformAnswersToListOfCompetitors": "TransformAnswersToListOfCompetitors" 
     }
 )
 
+
+
+
+builder.add_edge("TransformAnswersToListOfCompetitors", "ContinueToCompetitorAnalysisGeneration")
+
+builder.add_conditional_edges(
+    "route_to_documents_source",
+    route_to_documents_source,
+    {
+        "fetch_documents": "FetchDocuments",
+        "web_search": "WebSearch"
+    }
+)
 builder.add_edge("WebSearch", "GetHeadline")
 builder.add_edge("WebSearch", "GetCustomerBenefits")
 builder.add_edge("WebSearch", "GetValueProposition")
