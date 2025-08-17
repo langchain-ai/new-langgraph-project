@@ -14,6 +14,7 @@ from langsmith import traceable
 from operator import add
 import os
 from src.agent.competitive_analysis.models import Competitor, Answer, PartialAnswers, QuestionResponse, MainIdeaAndHeadline, ValueProposition, CustomerBenefits, SupportBenefits, Usecases, SuccessBenefits, Keywords
+from src.agent.competitive_analysis.models import CompetitorOutput
 from src.agent.competitive_analysis.prompts import COMPETITOR_LIST_PROMPT, QUESTIONNAIRE_PROMPT, HEADLINE_PROMPT, HEADLINE_SYSTEM_PROMPT, VALUE_PROPOSITION_PROMPT, VALUE_PROPOSITION_SYSTEM_PROMPT, CUSTOMER_BENEFITS_PROMPT, CUSTOMER_BENEFITS_SYSTEM_PROMPT, SUPPORT_BENEFITS_PROMPT, SUPPORT_BENEFITS_SYSTEM_PROMPT, USECASES_PROMPT, USECASES_SYSTEM_PROMPT, SUCCESS_BENEFITS_PROMPT, SUCCESS_BENEFITS_SYSTEM_PROMPT, KEYWORDS_PROMPT, KEYWORDS_SYSTEM_PROMPT
 from src.agent.competitive_analysis.utils import fetch_with_urls, fetch_with_web_search
 
@@ -31,6 +32,7 @@ class CompetitiveAnalysisState(TypedDict):
 class WorkerState(TypedDict):
     competitor: Competitor
     completed_competitors: Annotated[list, operator.add]
+    output: list
 
 """Node Functions"""
 def update_answers(current: Answer, new_partial: PartialAnswers) -> Answer:
@@ -121,9 +123,14 @@ def competitive_analysis(state: WorkerState):
 
     current_competitor = state['competitor']
     
-    # Documents
-    if current_competitor.websites:
-        documents = fetch_with_urls(current_competitor.websites)
+    # Documents if empty or try failed fetch with web search
+    if current_competitor.websites and len(current_competitor.websites) > 0:
+        try:
+            documents = fetch_with_urls(current_competitor.websites)
+        except Exception as e:
+            print(f"Error fetching documents with urls: {e}")
+            query = f"{current_competitor.competitor_name} {current_competitor.focus_product_or_service}"
+            documents = fetch_with_web_search(query)
     else:
         query = f"{current_competitor.competitor_name} {current_competitor.focus_product_or_service}"
         documents = fetch_with_web_search(query)
@@ -173,7 +180,7 @@ def competitive_analysis(state: WorkerState):
     current_competitor.success_benefits = ai_message.success_benefits
     
     # Keywords
-    keywords_prompt = KEYWORDS_PROMPT.format(company_name=current_competitor.competitor_name, product_name=current_competitor.focus_product_or_service, product_text=str(current_competitor.documents))
+    keywords_prompt = KEYWORDS_PROMPT.format(company_name=current_competitor.competitor_name, product_name=current_competitor.focus_product_or_service, product_text=str(current_competitor.documents), keywords=current_competitor.keywords)
     keywords_messages = [SystemMessage(content=KEYWORDS_SYSTEM_PROMPT), AIMessage(content=keywords_prompt)]
     llm_with_structured_output = llm.with_structured_output(Keywords)
     ai_message = llm_with_structured_output.invoke(keywords_messages)
@@ -188,14 +195,16 @@ def synthesizer(state: WorkerState):
 
     # List of completed sections
     completed_competitors = state["completed_competitors"]
-
+    output = []
     final_report = ""
     for competitor in completed_competitors:
-        final_report += f"""
+        temp_final_report = f"""
         {competitor.competitor_name}:
         {competitor.focus_product_or_service}
-        Main ideas/Headlines:
-        {competitor.main_idea_and_headline}
+        Main idea:
+        {competitor.main_idea_and_headline.main_idea}
+        Headline:
+        {competitor.main_idea_and_headline.headline}
         Value proposition:
         {competitor.value_proposition}
         Key customer benefits/Outcomes:
@@ -209,8 +218,17 @@ def synthesizer(state: WorkerState):
         Keywords:
         {competitor.keywords}
         """
+        refine_prompt = "Please make the final report more concise and readable. Do not change the content of the report. if empty section remove it."
+        refine_messages = [SystemMessage(content=refine_prompt), HumanMessage(content=temp_final_report)]
+        ai_message = llm.invoke(refine_messages)
+        llm_with_structured_output = llm.with_structured_output(CompetitorOutput)
+        prompt = "please extract the following information from the following text: " + ai_message.content
+        competitor_output = llm_with_structured_output.invoke(prompt)
+        output.append(competitor_output)
+        final_report += competitor_output.model_dump_json()
+        final_report += "\n\n"
 
-    return {"final_report": final_report}
+    return {"output": output, "final_report": final_report}
 
 """Graph"""
 builder = StateGraph(CompetitiveAnalysisState)

@@ -43,6 +43,18 @@ class Competitor(BaseModel):
     success_benefits: Optional[SuccessBenefits] = None
     keywords: Optional[Keywords] = None
 
+class CompetitorOutput(BaseModel):
+    competitor_name: str
+    focus_product_or_service: str
+    main_idea: str
+    headline: str
+    value_proposition: str
+    customer_benefits: str
+    support_benefits: str
+    usecases: str
+    success_benefits: str
+    keywords: str
+
 """User questionnaire"""
 class Answer(BaseModel):
     competitors_name: list[str]
