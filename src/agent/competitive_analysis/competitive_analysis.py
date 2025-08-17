@@ -13,13 +13,24 @@ import operator
 from langsmith import traceable
 from operator import add
 import os
-from src.agent.competitive_analysis.models import Competitor, Answer, PartialAnswers, QuestionResponse, MainIdeaAndHeadline, ValueProposition, CustomerBenefits, SupportBenefits, Usecases, SuccessBenefits, Keywords, CompetitiveAnalysisState, WorkerState
+from src.agent.competitive_analysis.models import Competitor, Answer, PartialAnswers, QuestionResponse, MainIdeaAndHeadline, ValueProposition, CustomerBenefits, SupportBenefits, Usecases, SuccessBenefits, Keywords
 from src.agent.competitive_analysis.prompts import COMPETITOR_LIST_PROMPT, QUESTIONNAIRE_PROMPT, HEADLINE_PROMPT, HEADLINE_SYSTEM_PROMPT, VALUE_PROPOSITION_PROMPT, VALUE_PROPOSITION_SYSTEM_PROMPT, CUSTOMER_BENEFITS_PROMPT, CUSTOMER_BENEFITS_SYSTEM_PROMPT, SUPPORT_BENEFITS_PROMPT, SUPPORT_BENEFITS_SYSTEM_PROMPT, USECASES_PROMPT, USECASES_SYSTEM_PROMPT, SUCCESS_BENEFITS_PROMPT, SUCCESS_BENEFITS_SYSTEM_PROMPT, KEYWORDS_PROMPT, KEYWORDS_SYSTEM_PROMPT
 from src.agent.competitive_analysis.utils import fetch_with_urls, fetch_with_web_search
-from src.agent.competitive_analysis.competitive_analysis_workers import CompetitiveAnalysisWorkerGraph
 
 llm = init_chat_model(model="openai:gpt-4o")
 tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
+
+"""States"""
+class CompetitiveAnalysisState(TypedDict):
+    messages: Annotated[list[AnyMessage], add_messages]
+    answers: Answer
+    user_answered_all_questions: bool
+    competitors: list[Competitor]
+    final_report: str
+
+class WorkerState(TypedDict):
+    competitor: Competitor
+    completed_competitors: Annotated[list, operator.add]
 
 """Node Functions"""
 def update_answers(current: Answer, new_partial: PartialAnswers) -> Answer:
@@ -103,7 +114,7 @@ def assign_workers(state: CompetitiveAnalysisState):
     """Assign a worker to each section in the plan"""
 
     # Kick off section writing in parallel via Send() API
-    return [Send("competitive_analysis_worker", {"competitor": s}) for s in state["competitors"]]
+    return [Send("competitive_analysis", {"competitor": s}) for s in state["competitors"]]
 
 def competitive_analysis(state: WorkerState):
     """Worker writes a section of the report"""
@@ -162,7 +173,7 @@ def competitive_analysis(state: WorkerState):
     current_competitor.success_benefits = ai_message.success_benefits
     
     # Keywords
-    keywords_prompt = KEYWORDS_PROMPT.format(company_name=current_competitor.competitor_name, product_name=current_competitor.focus_product_or_service, product_text=str(current_competitor.documents), keywords=current_competitor.keywords)
+    keywords_prompt = KEYWORDS_PROMPT.format(company_name=current_competitor.competitor_name, product_name=current_competitor.focus_product_or_service, product_text=str(current_competitor.documents))
     keywords_messages = [SystemMessage(content=KEYWORDS_SYSTEM_PROMPT), AIMessage(content=keywords_prompt)]
     llm_with_structured_output = llm.with_structured_output(Keywords)
     ai_message = llm_with_structured_output.invoke(keywords_messages)
@@ -207,8 +218,7 @@ builder = StateGraph(CompetitiveAnalysisState)
 """Nodes"""
 builder.add_node("user_questionnaire", user_questionnaire)
 builder.add_node("orchestrate_competitive_analysis", orchestrate_competitive_analysis)
-#builder.add_node("competitive_analysis", competitive_analysis)
-builder.add_node("competitive_analysis_worker", CompetitiveAnalysisWorkerGraph)
+builder.add_node("competitive_analysis", competitive_analysis)
 builder.add_node("synthesizer", synthesizer)
 builder.add_edge(START, "user_questionnaire")
 
@@ -224,11 +234,11 @@ builder.add_conditional_edges(
 builder.add_conditional_edges(
     "orchestrate_competitive_analysis",
     assign_workers,
-    ["competitive_analysis_worker"]
+    ["competitive_analysis"]
 )
 
 """Edges"""
-builder.add_edge("competitive_analysis_worker", "synthesizer")
+builder.add_edge("competitive_analysis", "synthesizer")
 builder.add_edge("synthesizer", END)
 
-graph = builder.compile()
+CompetitiveAnalysisGraph = builder.compile()
