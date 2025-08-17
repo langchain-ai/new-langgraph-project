@@ -2,7 +2,7 @@
   "dependencies": ["."],
   "graphs": {
     "marketing_machine": "src/agent/marketing_machine.py:graph",
-    "competitive_analysis": "src/agent/competitive_analysis.py:CompetitiveAnalysisSubgraph"
+    "competitive_analysis": "src/agent/competitive_analysis/competitive_analysis.py:graph"
   },
   "env": ".env",
   "image_distro": "wolfi"

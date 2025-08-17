@@ -6,7 +6,7 @@ from langchain.chat_models import init_chat_model
 from pydantic import BaseModel
 from langgraph.types import interrupt, Command
 from agent.messaging_framework import MessagingEngineSubgraph
-from agent.competitive_analysis import CompetitiveAnalysisSubgraph
+from agent.competitive_analysis.competitive_analysis import graph as CompetitiveAnalysisSubgraph
 from agent.marketing_research import MarketingResearchSubgraph
 from agent.content_engine import ContentEngineSubgraph
 from agent.PROMPTS import QuestionAnsweringPrompt, QuestionAnsweringContext, ImplicitRoutingContext, ClassifyInputPrompt
