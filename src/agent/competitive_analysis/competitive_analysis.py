@@ -224,8 +224,8 @@ def synthesizer(state: WorkerState):
         llm_with_structured_output = llm.with_structured_output(CompetitorOutput)
         prompt = "please extract the following information from the following text: " + ai_message.content
         competitor_output = llm_with_structured_output.invoke(prompt)
-        output.append(competitor_output)
-        final_report += competitor_output.model_dump_json()
+        output.append(competitor_output.model_dump_json())
+        final_report += temp_final_report
         final_report += "\n\n"
 
     return {"output": output, "final_report": final_report}
@@ -238,7 +238,12 @@ builder.add_node("user_questionnaire", user_questionnaire)
 builder.add_node("orchestrate_competitive_analysis", orchestrate_competitive_analysis)
 builder.add_node("competitive_analysis", competitive_analysis)
 builder.add_node("synthesizer", synthesizer)
+
+"""Edges"""
 builder.add_edge(START, "user_questionnaire")
+builder.add_edge("competitive_analysis", "synthesizer")
+builder.add_edge("synthesizer", END)
+
 
 """Conditional edges"""
 builder.add_conditional_edges(
@@ -254,9 +259,5 @@ builder.add_conditional_edges(
     assign_workers,
     ["competitive_analysis"]
 )
-
-"""Edges"""
-builder.add_edge("competitive_analysis", "synthesizer")
-builder.add_edge("synthesizer", END)
 
 CompetitiveAnalysisGraph = builder.compile()
