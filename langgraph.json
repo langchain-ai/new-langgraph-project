@@ -1,7 +1,10 @@
 {
-  "dependencies": ["."],
+  "dependencies": [
+    "."
+  ],
   "graphs": {
-    "agent": "./agents/ping/graph.py:graph"
+    "ping": "./agents/ping/graph.py:graph",
+    "hello": "./agents/hello/graph.py:graph"
   },
   "env": ".env",
   "image_distro": "wolfi"
