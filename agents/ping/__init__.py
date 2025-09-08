@@ -3,6 +3,6 @@
 This module defines a custom graph.
 """
 
-from ping.graph import graph
+from .graph import graph
 
 __all__ = ["graph"]

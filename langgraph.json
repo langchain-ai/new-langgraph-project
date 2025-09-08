@@ -4,7 +4,9 @@
   ],
   "graphs": {
     "ping": "./agents/ping/graph.py:graph",
-    "hello": "./agents/hello/graph.py:graph"
+    "hello": "./agents/hello/graph.py:graph",
+    "document_classifier": "./agents/document_classifier/graph.py:graph",
+    "medical_data_extractor": "./agents/medical_data_extractor/graph.py:graph"
   },
   "env": ".env",
   "image_distro": "wolfi"

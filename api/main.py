@@ -16,7 +16,9 @@ logger = logging.getLogger(__name__)
 
 # Import our modules
 import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../'))
+# Add project root to path
+project_root = os.path.join(os.path.dirname(__file__), '../')
+sys.path.insert(0, project_root)
 
 from common.common.schemas import ProcessRequest, ProcessResponse, ProcessingInfo, FileInfo, ErrorResponse
 from api.services.langgraph_processor import LangGraphProcessor
