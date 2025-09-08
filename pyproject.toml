@@ -1,13 +1,13 @@
 [project]
-name = "agent"
+name = "Shoreline AI Agent"
 version = "0.0.1"
-description = "Starter template for making a new agent LangGraph."
+description = "Shoreline AI Agents."
 authors = [
-    { name = "William Fu-Hinthorn", email = "13333726+hinthornw@users.noreply.github.com" },
+    { name = "Patrick Zhang", email = "patrick@shorelinemedicaladmin.com" },
 ]
 readme = "README.md"
 license = { text = "MIT" }
-requires-python = ">=3.9"
+requires-python = ">=3.12"
 dependencies = [
     "langgraph>=0.2.6",
     "python-dotenv>=1.0.1",
@@ -32,28 +32,54 @@ packages = ["langgraph.templates.agent", "agent"]
 "*" = ["py.typed"]
 
 [tool.ruff]
-lint.select = [
-    "E",    # pycodestyle
+target-version = "py312"
+line-length = 88
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
     "F",    # pyflakes
     "I",    # isort
     "D",    # pydocstyle
-    "D401", # First line should be in imperative mood
-    "T201",
-    "UP",
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "S",    # flake8-bandit
+    "C4",   # flake8-comprehensions
+    "T201", # print statements
 ]
-lint.ignore = [
+ignore = [
     "UP006",
     "UP007",
-    # We actually do want to import from typing_extensions
-    "UP035",
-    # Relax the convention by _not_ requiring documentation for every function parameter.
-    "D417",
-    "E501",
+    "UP035", # We actually do want to import from typing_extensions
+    "D417",  # Relax the convention by _not_ requiring documentation for every function parameter
+    "E501",  # Line too long (handled by formatter)
+    "S101",  # Use of assert (common in tests)
 ]
+
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["D", "UP"]
+"tests/*" = ["D", "UP", "S"]
+"agents/*/graph.py" = ["T201"]  # Allow print in agent graphs
+
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+
+[tool.bandit]
+exclude_dirs = ["tests"]
+skips = ["B101"]  # Skip asse
 
 [dependency-groups]
 dev = [
@@ -62,4 +88,6 @@ dev = [
     "mypy>=1.13.0",
     "pytest>=8.3.5",
     "ruff>=0.8.2",
+    "pre-commit>=4.0.0",
+    "bandit>=1.7.10",
 ]
