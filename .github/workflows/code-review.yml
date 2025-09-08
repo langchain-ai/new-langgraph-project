@@ -1,0 +1,41 @@
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+jobs:
+  claude:
+    runs-on: ubuntu-latest
+    name: Claude Code Review
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Claude Code Review
+        uses: anthropics/claude-code-action@beta
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          direct_prompt: |
+            Please provide a thorough code review of this pull request. Focus on:
+
+            1. **Code Quality**: Check for potential bugs, security issues, and adherence to best practices
+            2. **Django/Python Best Practices**: Ensure Django and Python conventions are followed
+            3. **API Design**: For API changes, evaluate the design and backward compatibility
+            4. **Testing**: Review test coverage and quality of test cases
+            5. **Documentation**: Check if code is well-documented and self-explanatory
+            6. **Performance**: Identify any potential performance concerns
+
+            Please be constructive and specific in your feedback, providing suggestions for improvement where applicable.
