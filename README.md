@@ -13,6 +13,38 @@ The core logic defined in `src/agent/graph.py`, showcases an single-step applica
 
 You can extend this graph to orchestrate more complex agentic workflows that can be visualized and debugged in LangGraph Studio.
 
+## Mono Repo
+
+```markdown
+project-root/
+├── agents/
+│   ├── agent1/
+│   │   ├── pyproject.toml           # Agent1's dependencies & package config
+│   │   ├── agent1/                  # Python package for Agent1's code
+│   │   │   ├── __init__.py
+│   │   │   └── agent.py             # Defines Agent1's LangGraph (graph/workflow)
+│   │   ├── langgraph.json           # LangGraph config for Agent1 (graph & deps)
+│   │   └── .env                     # Env vars for Agent1 (API keys, etc.)
+│   └── agent2/
+│       ├── pyproject.toml           # Agent2's dependencies & package config
+│       ├── agent2/                  # Python package for Agent2's code
+│       │   ├── __init__.py
+│       │   └── agent.py             # Defines Agent2's LangGraph 
+│       ├── langgraph.json           # LangGraph config for Agent2
+│       └── .env                     # Env vars for Agent2
+├── common/
+│   ├── pyproject.toml               # (Optional) common package dependencies
+│   └── common/                      # Shared utilities package
+│       ├── __init__.py
+│       ├── db_utils.py             # e.g. database access helpers
+│       ├── s3_utils.py             # e.g. S3 file handling tools
+│       └── logging.py              # e.g. custom logging setup
+├── config/
+│   ├── global.env                   # (Optional) global env vars (if shared)
+│   └── logging.yaml                 # (Optional) global logging config
+└── langgraph.json                   # (Optional) combined config defining multiple graphs
+```
+
 ## Getting Started
 
 1. Install dependencies, along with the [LangGraph CLI](https://langchain-ai.github.io/langgraph/concepts/langgraph_cli/), which will be used to run the server.
