@@ -1,0 +1,17 @@
+{
+  "name": "Medical Data Extractor Agent",
+  "graphs": {
+    "medical_data_extractor": {
+      "python_path": "graph:graph",
+      "description": "Extracts structured data from medical documents using Textract or OpenAI"
+    }
+  },
+  "env": [
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_REGION",
+    "S3_BUCKET",
+    "OPENAI_API_KEY"
+  ],
+  "python_version": "3.12"
+}

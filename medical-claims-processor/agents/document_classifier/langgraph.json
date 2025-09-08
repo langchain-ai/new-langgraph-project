@@ -1,0 +1,16 @@
+{
+  "name": "Document Classifier Agent",
+  "graphs": {
+    "document_classifier": {
+      "python_path": "graph:graph",
+      "description": "Classifies medical documents (CMS-1500, HCFA-1500) and determines processing method"
+    }
+  },
+  "env": [
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_REGION",
+    "S3_BUCKET"
+  ],
+  "python_version": "3.12"
+}

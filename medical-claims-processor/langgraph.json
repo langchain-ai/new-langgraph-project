@@ -1,0 +1,29 @@
+{
+  "name": "Medical Claims Processor",
+  "description": "Multi-agent system for processing medical claims documents (CMS-1500/HCFA-1500)",
+  "graphs": {
+    "document_classifier": {
+      "python_path": "./agents/document_classifier/graph.py:graph",
+      "description": "Classifies medical documents and determines processing method"
+    },
+    "medical_data_extractor": {
+      "python_path": "./agents/medical_data_extractor/graph.py:graph",
+      "description": "Extracts structured data from medical documents"
+    }
+  },
+  "env": [
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_REGION",
+    "S3_BUCKET",
+    "OPENAI_API_KEY"
+  ],
+  "python_version": "3.12",
+  "dependencies": [
+    "langgraph>=0.2.6",
+    "langchain>=0.1.0",
+    "boto3>=1.34.0",
+    "fastapi>=0.104.1",
+    "uvicorn[standard]>=0.24.0"
+  ]
+}
