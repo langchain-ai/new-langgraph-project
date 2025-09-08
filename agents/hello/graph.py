@@ -31,6 +31,7 @@ class State:
     """
 
     name: str = ""
+    message: str = ""
 
 
 async def greet(state: State, runtime: Runtime[Context]) -> Dict[str, Any]:
