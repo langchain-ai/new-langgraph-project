@@ -1,0 +1,85 @@
+services:
+  # LocalStack for AWS services simulation
+  localstack:
+    image: localstack/localstack:latest
+    container_name: localstack
+    ports:
+      - "4566:4566"  # LocalStack gateway port
+    environment:
+      - SERVICES=s3,textract,secretsmanager
+      - DEBUG=1
+      - DATA_DIR=/tmp/localstack/data
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - AWS_DEFAULT_REGION=us-east-1
+    volumes:
+      - localstack-data:/tmp/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./scripts/localstack-init.sh:/docker-entrypoint-initaws.d/init.sh
+      - ./tests/test-files:/docker-entrypoint-initaws.d/test-files
+    networks:
+      - ai-agents-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # AI Agents API application
+  ai-agents-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai-agents-api
+    depends_on:
+      localstack:
+        condition: service_healthy
+    environment:
+      # AWS Configuration for LocalStack
+      - AWS_ENDPOINT_URL=http://localstack:4566
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_DEFAULT_REGION=us-east-1
+      - S3_BUCKET=medical-documents
+      
+      # OpenAI Configuration (需要实际的API Key)
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      
+      # Application Configuration
+      - ENV=development
+      - LOG_LEVEL=INFO
+      - CONFIDENCE_THRESHOLD=0.7
+      
+      # LangGraph Configuration
+      - LANGGRAPH_API_URL=http://localhost:8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./agents:/app/agents
+      - ./api:/app/api
+      - ./tests:/app/tests
+    networks:
+      - ai-agents-network
+    restart: unless-stopped
+
+  # Optional: LangGraph Studio for visualization (if available)
+  langgraph-studio:
+    image: langchain/langgraph-studio:latest
+    container_name: langgraph-studio
+    environment:
+      - LANGGRAPH_API_URL=http://ai-agents-api:8000
+    ports:
+      - "8080:8080"
+    depends_on:
+      - ai-agents-api
+    networks:
+      - ai-agents-network
+    profiles:
+      - studio
+
+networks:
+  ai-agents-network:
+    driver: bridge
+
+volumes:
+  localstack-data:

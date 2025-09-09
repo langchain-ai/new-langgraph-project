@@ -1,0 +1,21 @@
+services:
+  # LocalStack for AWS services simulation - simplified configuration
+  localstack:
+    image: localstack/localstack:3.0
+    container_name: localstack
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=s3
+      - DEBUG=0
+      - AWS_DEFAULT_REGION=us-east-1
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    volumes:
+      - ./scripts/localstack-init.sh:/docker-entrypoint-initaws.d/init.sh
+      - ./tests/test-files:/docker-entrypoint-initaws.d/test-files
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s

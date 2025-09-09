@@ -1,0 +1,25 @@
+# Core dependencies
+fastapi
+uvicorn[standard]
+python-multipart
+
+# LangGraph and LangChain
+langgraph
+langchain
+langchain-openai
+
+# AWS SDK
+boto3
+
+# PDF processing
+PyPDF2
+pdfplumber
+
+# Data processing
+pydantic
+python-dotenv
+
+# Testing
+pytest
+pytest-asyncio
+httpx

@@ -1,0 +1,26 @@
+# Simplified development compose file - LocalStack only
+services:
+  # LocalStack for AWS services simulation
+  localstack:
+    image: localstack/localstack:latest
+    container_name: localstack
+    ports:
+      - "4566:4566"  # LocalStack gateway port
+    environment:
+      - SERVICES=s3,textract,secretsmanager
+      - DEBUG=1
+      - DATA_DIR=/tmp/localstack/data
+      - AWS_DEFAULT_REGION=us-east-1
+    volumes:
+      - localstack-data:/tmp/localstack
+      - ./scripts/localstack-init.sh:/docker-entrypoint-initaws.d/init.sh
+      - ./tests/test-files:/docker-entrypoint-initaws.d/test-files
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  localstack-data:

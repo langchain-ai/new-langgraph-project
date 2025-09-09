@@ -1,4 +1,4 @@
-.PHONY: all format lint test tests test_watch integration_tests docker_tests help extended_tests
+.PHONY: all format lint test tests test_watch integration_tests docker_tests help extended_tests dev-up dev-down dev-logs docker-build docker-up docker-down clean setup test-api
 
 # Default target executed when no arguments are given to make.
 all: help
@@ -53,6 +53,58 @@ spell_fix:
 	codespell --toml pyproject.toml -w
 
 ######################
+# DOCKER & DEPLOYMENT
+######################
+
+dev-up:
+	docker-compose -f docker-compose.dev.yml up -d
+	@echo "Waiting for LocalStack to be ready..."
+	@sleep 5
+	@echo "LocalStack is running at http://localhost:4566"
+
+dev-down:
+	docker-compose -f docker-compose.dev.yml down
+
+dev-logs:
+	docker-compose -f docker-compose.dev.yml logs -f
+
+docker-build:
+	docker build -t ai-agents:latest .
+
+docker-up:
+	./scripts/deploy.sh up
+
+docker-down:
+	./scripts/deploy.sh down
+
+docker-logs:
+	docker-compose logs -f
+
+test-api:
+	@echo "Testing API endpoints..."
+	curl -X GET http://localhost:8000/health | python -m json.tool
+	@echo ""
+	curl -X POST http://localhost:8000/api/v1/process \
+		-H "Content-Type: application/json" \
+		-d '{"s3_key": "test/sample.pdf", "process_type": "classify"}' | python -m json.tool
+
+clean:
+	docker-compose -f docker-compose.dev.yml down -v
+	docker-compose down -v
+	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+	find . -type f -name "*.pyc" -delete
+
+setup:
+	@echo "Setting up development environment..."
+	@if [ ! -f .env ]; then \
+		echo "Creating .env from template..."; \
+		cp .env.example .env; \
+		echo "Please update .env with your configuration"; \
+	fi
+	pip install -r requirements.txt
+	@echo "Setup complete!"
+
+######################
 # HELP
 ######################
 
@@ -64,4 +116,15 @@ help:
 	@echo 'tests                        - run unit tests'
 	@echo 'test TEST_FILE=<test_file>   - run all tests in file'
 	@echo 'test_watch                   - run unit tests in watch mode'
+	@echo '----'
+	@echo 'Docker Commands:'
+	@echo 'dev-up                       - Start LocalStack for development'
+	@echo 'dev-down                     - Stop LocalStack'
+	@echo 'dev-logs                     - View LocalStack logs'
+	@echo 'docker-build                 - Build Docker image'
+	@echo 'docker-up                    - Start all services with Docker'
+	@echo 'docker-down                  - Stop all Docker services'
+	@echo 'test-api                     - Test API endpoints'
+	@echo 'clean                        - Clean up everything'
+	@echo 'setup                        - Setup development environment'
 

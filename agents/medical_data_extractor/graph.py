@@ -100,8 +100,8 @@ async def download_document(state: State, runtime: Runtime[Context]) -> Dict[str
     import boto3
     from botocore.exceptions import ClientError
     
-    bucket = runtime["s3_bucket"]
-    region = runtime["aws_region"]
+    bucket = runtime.context.get("s3_bucket", "medical-documents")
+    region = runtime.context.get("aws_region", "us-east-1")
     
     s3_client = boto3.client('s3', region_name=region)
     
@@ -129,8 +129,8 @@ async def process_with_textract(state: State, runtime: Runtime[Context]) -> Dict
     import boto3
     from botocore.exceptions import ClientError
     
-    bucket = runtime["s3_bucket"]
-    region = runtime["aws_region"]
+    bucket = runtime.context.get("s3_bucket", "medical-documents")
+    region = runtime.context.get("aws_region", "us-east-1")
     
     textract_client = boto3.client('textract', region_name=region)
     
@@ -195,7 +195,7 @@ async def extract_fields(state: State, runtime: Runtime[Context]) -> Dict[str, A
 
 async def validate_data(state: State, runtime: Runtime[Context]) -> Dict[str, Any]:
     """Validate extracted data."""
-    if not runtime["enable_validation"]:
+    if not runtime.context.get("enable_validation", True):
         return {"is_valid": True}
     
     errors = []

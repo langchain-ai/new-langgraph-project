@@ -41,8 +41,8 @@ app.add_middleware(
 
 # Initialize processor
 processor = LangGraphProcessor(
-    s3_bucket=os.getenv("S3_BUCKET", "medical-claims-documents"),
-    aws_region=os.getenv("AWS_REGION", "us-east-1")
+    s3_bucket=os.getenv("S3_BUCKET", "medical-documents"),
+    aws_region=os.getenv("AWS_DEFAULT_REGION", "us-east-1")
 )
 
 
