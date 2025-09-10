@@ -97,13 +97,19 @@ class State:
 
 async def download_document(state: State, runtime: Runtime[Context]) -> Dict[str, Any]:
     """Download full document from S3."""
+    import os
     import boto3
     from botocore.exceptions import ClientError
     
     bucket = runtime.context.get("s3_bucket", "medical-documents")
     region = runtime.context.get("aws_region", "us-east-1")
+    endpoint_url = os.getenv("AWS_ENDPOINT_URL")
     
-    s3_client = boto3.client('s3', region_name=region)
+    s3_client = boto3.client(
+        's3', 
+        region_name=region,
+        endpoint_url=endpoint_url
+    )
     
     try:
         response = s3_client.get_object(Bucket=bucket, Key=state.s3_key)

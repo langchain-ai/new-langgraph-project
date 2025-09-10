@@ -20,7 +20,7 @@ import sys
 project_root = os.path.join(os.path.dirname(__file__), '../')
 sys.path.insert(0, project_root)
 
-from common.common.schemas import ProcessRequest, ProcessResponse, ProcessingInfo, FileInfo, ErrorResponse
+from common.schemas import ProcessRequest, ProcessResponse, ProcessingInfo, FileInfo, ErrorResponse
 from api.services.langgraph_processor import LangGraphProcessor
 
 # Initialize FastAPI app

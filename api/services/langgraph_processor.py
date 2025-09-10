@@ -12,7 +12,7 @@ sys.path.insert(0, project_root)
 
 from agents.document_classifier.graph import graph as classifier_graph
 from agents.medical_data_extractor.graph import graph as extractor_graph
-from common.common.schemas import ExtractedData, ValidationResult
+from common.schemas import ExtractedData, ValidationResult
 
 logger = logging.getLogger(__name__)
 

@@ -117,11 +117,17 @@ async def download_sample(state: State, runtime: Runtime[Context]) -> Dict[str, 
         }
     else:
         # S3 mode (original code)
+        import os
         import boto3
         from botocore.exceptions import ClientError
         
         region = runtime.context.get("aws_region", "us-east-1")
-        s3_client = boto3.client('s3', region_name=region)
+        endpoint_url = os.getenv("AWS_ENDPOINT_URL")
+        s3_client = boto3.client(
+            's3', 
+            region_name=region,
+            endpoint_url=endpoint_url
+        )
         
         try:
             # Get object metadata
@@ -129,17 +135,46 @@ async def download_sample(state: State, runtime: Runtime[Context]) -> Dict[str, 
             file_size = response['ContentLength']
             content_type = response.get('ContentType', 'application/octet-stream')
             
-            # Download first 1MB for classification
+            # Download first 1MB for classification (or entire file if smaller)
             max_bytes = 1024 * 1024  # 1MB
-            range_header = f'bytes=0-{min(max_bytes - 1, file_size - 1)}'
             
-            response = s3_client.get_object(
-                Bucket=bucket,
-                Key=state.s3_key,
-                Range=range_header
-            )
+            if file_size <= max_bytes:
+                # Download entire file if it's small enough
+                response = s3_client.get_object(
+                    Bucket=bucket,
+                    Key=state.s3_key
+                )
+            else:
+                # Download only first 1MB for large files
+                range_header = f'bytes=0-{max_bytes - 1}'
+                response = s3_client.get_object(
+                    Bucket=bucket,
+                    Key=state.s3_key,
+                    Range=range_header
+                )
             
             content_sample = response['Body'].read()
+            
+            # If PDF, extract text content
+            if content_type == 'application/pdf':
+                try:
+                    import io
+                    import PyPDF2
+                    pdf_file = io.BytesIO(content_sample)
+                    pdf_reader = PyPDF2.PdfReader(pdf_file)
+                    text_content = b""
+                    for page_num in range(min(len(pdf_reader.pages), 10)):
+                        page = pdf_reader.pages[page_num]
+                        text = page.extract_text()
+                        text_content += text.encode('utf-8', errors='ignore')
+                        if len(text_content) >= max_bytes:
+                            text_content = text_content[:max_bytes]
+                            break
+                    if text_content:
+                        content_sample = text_content
+                except Exception:
+                    # If PDF parsing fails, keep raw bytes
+                    pass
             
             return {
                 "content_sample": content_sample,
