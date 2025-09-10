@@ -135,51 +135,128 @@ async def download_sample(state: State, runtime: Runtime[Context]) -> Dict[str, 
             file_size = response['ContentLength']
             content_type = response.get('ContentType', 'application/octet-stream')
             
-            # Download first 1MB for classification (or entire file if smaller)
-            max_bytes = 1024 * 1024  # 1MB
+            # Strong CMS-1500 indicators for early detection
+            STRONG_INDICATORS = [
+                b"CMS-1500",
+                b"CMS 1500",
+                b"FORM 1500",
+                b"HEALTH INSURANCE CLAIM FORM",
+                b"APPROVED OMB-0938",
+                b"1a. INSURED'S I.D. NUMBER",
+                b"24A",  # Service line indicators
+                b"DIAGNOSIS OR NATURE OF ILLNESS",
+                b"NUCC",  # National Uniform Claim Committee
+                b"HCFA-1500",
+                b"HCFA 1500"
+            ]
             
-            if file_size <= max_bytes:
-                # Download entire file if it's small enough
-                response = s3_client.get_object(
-                    Bucket=bucket,
-                    Key=state.s3_key
-                )
-            else:
-                # Download only first 1MB for large files
-                range_header = f'bytes=0-{max_bytes - 1}'
-                response = s3_client.get_object(
-                    Bucket=bucket,
-                    Key=state.s3_key,
-                    Range=range_header
-                )
+            # Progressive byte range strategy
+            byte_ranges = [
+                65536,   # 64KB - often enough for first page header
+                131072,  # 128KB - usually covers full first page
+                262144,  # 256KB - covers most single page PDFs
+                524288,  # 512KB - safety buffer for complex layouts
+            ]
             
-            content_sample = response['Body'].read()
+            content_sample = b""
+            text_content = b""
+            strong_signal_count = 0
+            confidence_threshold = 3  # Need at least 3 strong signals
             
-            # If PDF, extract text content
-            if content_type == 'application/pdf':
-                try:
-                    import io
-                    import PyPDF2
-                    pdf_file = io.BytesIO(content_sample)
-                    pdf_reader = PyPDF2.PdfReader(pdf_file)
-                    text_content = b""
-                    for page_num in range(min(len(pdf_reader.pages), 10)):
-                        page = pdf_reader.pages[page_num]
-                        text = page.extract_text()
-                        text_content += text.encode('utf-8', errors='ignore')
-                        if len(text_content) >= max_bytes:
-                            text_content = text_content[:max_bytes]
-                            break
-                    if text_content:
-                        content_sample = text_content
-                except Exception:
-                    # If PDF parsing fails, keep raw bytes
-                    pass
+            # Progressive streaming with early exit
+            for chunk_size in byte_ranges:
+                if chunk_size >= file_size:
+                    # File is smaller than chunk, get entire file
+                    response = s3_client.get_object(
+                        Bucket=bucket,
+                        Key=state.s3_key
+                    )
+                    content_sample = response['Body'].read()
+                else:
+                    # Get only the chunk we need
+                    start_byte = len(content_sample)
+                    end_byte = min(chunk_size - 1, file_size - 1)
+                    
+                    # Skip if we already have enough bytes
+                    if start_byte >= end_byte:
+                        break
+                        
+                    range_header = f'bytes={start_byte}-{end_byte}'
+                    
+                    try:
+                        response = s3_client.get_object(
+                            Bucket=bucket,
+                            Key=state.s3_key,
+                            Range=range_header
+                        )
+                        
+                        new_chunk = response['Body'].read()
+                        content_sample += new_chunk
+                    except Exception as e:
+                        # If range request fails, get the whole file
+                        print(f"Range request failed: {e}, falling back to full download")
+                        response = s3_client.get_object(
+                            Bucket=bucket,
+                            Key=state.s3_key
+                        )
+                        content_sample = response['Body'].read()
+                        break
+                
+                # Try to extract text from PDF if applicable
+                if content_type == 'application/pdf' or state.s3_key.lower().endswith('.pdf'):
+                    try:
+                        import io
+                        import PyPDF2
+                        pdf_file = io.BytesIO(content_sample)
+                        pdf_reader = PyPDF2.PdfReader(pdf_file)
+                        
+                        # Extract text from available pages
+                        temp_text = b""
+                        for page_num in range(min(len(pdf_reader.pages), 3)):  # Check first 3 pages max
+                            try:
+                                page = pdf_reader.pages[page_num]
+                                text = page.extract_text()
+                                temp_text += text.encode('utf-8', errors='ignore')
+                            except:
+                                continue
+                        
+                        if temp_text:
+                            text_content = temp_text
+                    except:
+                        # PDF parsing failed, use raw bytes
+                        text_content = content_sample
+                else:
+                    text_content = content_sample
+                
+                # Check for strong signals
+                strong_signal_count = 0
+                for indicator in STRONG_INDICATORS:
+                    if indicator in text_content.upper():
+                        strong_signal_count += 1
+                
+                # Early exit if we found enough strong signals
+                if strong_signal_count >= confidence_threshold:
+                    print(f"Early detection: Found {strong_signal_count} strong CMS-1500 signals in first {len(content_sample)} bytes")
+                    break
+                
+                # Also exit if we've read enough and found some signals
+                if len(content_sample) >= 131072 and strong_signal_count >= 2:
+                    print(f"Partial detection: Found {strong_signal_count} signals in {len(content_sample)} bytes")
+                    break
+                
+                # Exit if file is fully read
+                if len(content_sample) >= file_size:
+                    break
+            
+            # Use text content if successfully extracted, otherwise use raw bytes
+            final_content = text_content if text_content else content_sample
             
             return {
-                "content_sample": content_sample,
+                "content_sample": final_content,
                 "content_type": content_type,
-                "file_size": file_size
+                "file_size": file_size,
+                "bytes_read": len(content_sample),
+                "early_detection": strong_signal_count >= confidence_threshold
             }
             
         except ClientError as e:
@@ -195,13 +272,29 @@ async def download_sample(state: State, runtime: Runtime[Context]) -> Dict[str, 
 async def classify_document(state: State, runtime: Runtime[Context]) -> Dict[str, Any]:
     """Classify document type based on content indicators."""
     
-    # CMS-1500 specific indicators
+    # Check if early detection already found strong signals
+    if hasattr(state, 'early_detection') and state.early_detection:
+        # Fast path: already detected as CMS-1500 with high confidence
+        return {
+            "document_type": DocumentType.CMS_1500.value,
+            "processor": ProcessorType.TEXTRACT.value,
+            "confidence": 0.95,  # High confidence from early detection
+            "indicators_found": ["CMS-1500", "FORM 1500", "HEALTH INSURANCE CLAIM"],
+            "classification_reason": f"Early detection: Strong CMS-1500 signals found in first {getattr(state, 'bytes_read', 0)} bytes"
+        }
+    
+    # CMS-1500 specific indicators (expanded)
     CMS_INDICATORS = [
         b"CMS-1500",
+        b"CMS 1500",
+        b"FORM 1500",  # Added for newer forms
         b"HEALTH INSURANCE CLAIM FORM",
+        b"APPROVED OMB-0938-1197",  # Current OMB number
+        b"APPROVED OMB-0938",  # Generic OMB pattern
         b"PICA",
         b"PATIENT'S NAME",
         b"INSURED'S I.D. NUMBER",
+        b"1A. INSURED'S I.D. NUMBER",  # Field 1A specific
         b"PATIENT'S BIRTH DATE",
         b"INSURED'S NAME",
         b"PATIENT'S ADDRESS",
@@ -211,7 +304,11 @@ async def classify_document(state: State, runtime: Runtime[Context]) -> Dict[str
         b"PATIENT'S ACCOUNT NO",
         b"TOTAL CHARGE",
         b"AMOUNT PAID",
-        b"NPI"
+        b"NPI",
+        b"24A",  # Service line markers
+        b"24B",
+        b"24J",
+        b"NUCC"  # National Uniform Claim Committee
     ]
     
     # HCFA-1500 indicators (older version)

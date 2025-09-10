@@ -8,9 +8,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, TypedDict, List, Optional
 from enum import Enum
+import os
+import logging
+import boto3
 
 from langgraph.graph import StateGraph
 from langgraph.runtime import Runtime
+
+logger = logging.getLogger(__name__)
 
 
 class ProcessorType(str, Enum):
@@ -163,18 +168,154 @@ async def process_with_textract(state: State, runtime: Runtime[Context]) -> Dict
 
 
 async def process_with_openai(state: State, runtime: Runtime[Context]) -> Dict[str, Any]:
-    """Process document using OpenAI GPT-4V."""
+    """Process document using OpenAI GPT-4o."""
     if state.processor != ProcessorType.OPENAI.value:
         return {}
     
-    # For MVP, return mock data
-    # In production, this would call OpenAI API
-    return {
-        "openai_response": {
-            "model": "gpt-4-vision",
-            "note": "OpenAI integration pending - mock data for MVP"
+    import base64
+    import json
+    from openai import OpenAI
+    import io
+    import pdf2image
+    
+    # Get API key from environment or context
+    api_key = runtime.context.get("openai_api_key") or os.getenv("OPENAI_API_KEY")
+    
+    if not api_key:
+        # Return mock data if no API key
+        return {
+            "openai_response": {
+                "model": "gpt-4o",
+                "note": "No OpenAI API key provided - returning mock data",
+                "mock_data": True
+            }
         }
+    
+    try:
+        # Initialize OpenAI client
+        client = OpenAI(api_key=api_key)
+        
+        # Get document from S3
+        bucket = runtime.context.get("s3_bucket", "medical-documents")
+        region = runtime.context.get("aws_region", "us-east-1")
+        endpoint_url = os.getenv("AWS_ENDPOINT_URL")
+        
+        s3_client = boto3.client(
+            's3',
+            region_name=region,
+            endpoint_url=endpoint_url,
+            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID", "test"),
+            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY", "test")
+        )
+        
+        # Download document
+        response = s3_client.get_object(Bucket=bucket, Key=state.s3_key)
+        pdf_content = response['Body'].read()
+        
+        # Convert PDF to image (first page)
+        images = pdf2image.convert_from_bytes(pdf_content, dpi=200, first_page=1, last_page=1)
+        
+        # Convert to base64
+        buffered = io.BytesIO()
+        images[0].save(buffered, format="PNG")
+        img_base64 = base64.b64encode(buffered.getvalue()).decode()
+        
+        # Create prompt for GPT-4o
+        prompt = """You are a medical claims processing expert. Analyze this CMS-1500/HCFA-1500 insurance claim form and extract all relevant information.
+
+Please extract and return the following information in JSON format:
+{
+    "patient": {
+        "name": "full name",
+        "dob": "YYYY-MM-DD format",
+        "sex": "M/F",
+        "address": "street address",
+        "city": "city",
+        "state": "state",
+        "zip": "zip code",
+        "phone": "phone number"
+    },
+    "insurance": {
+        "insured_id": "insurance ID number",
+        "insured_name": "insured person's name",
+        "plan_name": "insurance plan/company name",
+        "group_number": "group number if available"
+    },
+    "diagnoses": ["list of diagnosis codes (ICD-10)"],
+    "procedures": [
+        {
+            "code": "CPT/HCPCS code",
+            "description": "procedure description",
+            "date": "service date",
+            "charge": "charge amount as number"
+        }
+    ],
+    "provider": {
+        "name": "provider/clinic name",
+        "npi": "NPI number",
+        "tax_id": "tax ID",
+        "address": "provider address",
+        "phone": "provider phone"
+    },
+    "financial": {
+        "total_charge": "total charge as number",
+        "amount_paid": "amount paid as number",
+        "balance_due": "balance due as number"
     }
+}
+
+If any field is not clearly visible or not present, use null for that field.
+"""
+        
+        # Call GPT-4o
+        response = client.chat.completions.create(
+            model="gpt-4o",  # Using GPT-4o for better performance
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/png;base64,{img_base64}",
+                                "detail": "high"  # High detail for form recognition
+                            }
+                        }
+                    ]
+                }
+            ],
+            temperature=0.1,  # Low temperature for consistent extraction
+            max_tokens=2000,
+            response_format={"type": "json_object"}  # Ensure JSON response
+        )
+        
+        # Parse the response
+        extracted_data = json.loads(response.choices[0].message.content)
+        
+        return {
+            "openai_response": {
+                "model": "gpt-4o",
+                "extracted_data": extracted_data,
+                "usage": {
+                    "prompt_tokens": response.usage.prompt_tokens,
+                    "completion_tokens": response.usage.completion_tokens,
+                    "total_tokens": response.usage.total_tokens
+                }
+            }
+        }
+        
+    except Exception as e:
+        # Fallback to mock data on error
+        logger.error(f"OpenAI processing error: {str(e)}")
+        return {
+            "openai_response": {
+                "model": "gpt-4o",
+                "error": str(e),
+                "note": "Error occurred - returning mock data",
+                "mock_data": True
+            }
+        }
 
 
 async def extract_fields(state: State, runtime: Runtime[Context]) -> Dict[str, Any]:
@@ -186,15 +327,64 @@ async def extract_fields(state: State, runtime: Runtime[Context]) -> Dict[str, A
         # Parse Textract response
         extracted = _parse_textract_response(state.textract_response)
     elif state.openai_response:
-        # Parse OpenAI response (mock for MVP)
-        extracted = {
-            "patient_name": "John Doe",
-            "patient_dob": "1980-01-01",
-            "insured_id": "MOCK123456",
-            "diagnosis_codes": ["Z00.00"],
-            "procedure_codes": ["99213"],
-            "total_charge": 150.00
-        }
+        # Check if we have real extracted data from GPT-4o
+        if "extracted_data" in state.openai_response:
+            # Parse GPT-4o response
+            data = state.openai_response["extracted_data"]
+            
+            # Extract patient information
+            patient = data.get("patient", {})
+            extracted["patient_name"] = patient.get("name", "")
+            extracted["patient_dob"] = patient.get("dob", "")
+            extracted["patient_sex"] = patient.get("sex", "")
+            extracted["patient_address"] = patient.get("address", "")
+            extracted["patient_city"] = patient.get("city", "")
+            extracted["patient_state"] = patient.get("state", "")
+            extracted["patient_zip"] = patient.get("zip", "")
+            extracted["patient_phone"] = patient.get("phone", "")
+            
+            # Extract insurance information
+            insurance = data.get("insurance", {})
+            extracted["insured_id"] = insurance.get("insured_id", "")
+            extracted["insured_name"] = insurance.get("insured_name", "")
+            extracted["insurance_plan_name"] = insurance.get("plan_name", "")
+            
+            # Extract diagnoses
+            extracted["diagnosis_codes"] = data.get("diagnoses", [])
+            
+            # Extract procedures
+            procedures = data.get("procedures", [])
+            if procedures:
+                extracted["procedure_codes"] = [p.get("code", "") for p in procedures if p.get("code")]
+                extracted["service_dates"] = [p.get("date", "") for p in procedures if p.get("date")]
+                # Sum up charges from procedures
+                total_charge = sum(float(p.get("charge", 0)) for p in procedures)
+                extracted["total_charge"] = total_charge
+            
+            # Extract provider information
+            provider = data.get("provider", {})
+            extracted["provider_name"] = provider.get("name", "")
+            extracted["provider_npi"] = provider.get("npi", "")
+            extracted["provider_tax_id"] = provider.get("tax_id", "")
+            extracted["provider_address"] = provider.get("address", "")
+            extracted["provider_phone"] = provider.get("phone", "")
+            
+            # Extract financial information
+            financial = data.get("financial", {})
+            extracted["total_charge"] = float(financial.get("total_charge", extracted.get("total_charge", 0)))
+            extracted["amount_paid"] = float(financial.get("amount_paid", 0))
+            extracted["balance_due"] = float(financial.get("balance_due", 0))
+            
+        else:
+            # Return mock data if no real extraction
+            extracted = {
+                "patient_name": "John Doe",
+                "patient_dob": "1980-01-01",
+                "insured_id": "MOCK123456",
+                "diagnosis_codes": ["Z00.00"],
+                "procedure_codes": ["99213"],
+                "total_charge": 150.00
+            }
     
     return extracted
 

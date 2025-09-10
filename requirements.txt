@@ -14,6 +14,11 @@ boto3
 # PDF processing
 PyPDF2
 pdfplumber
+pdf2image
+pillow
+
+# OpenAI integration
+openai
 
 # Data processing
 pydantic
