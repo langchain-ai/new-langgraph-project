@@ -1,0 +1,70 @@
+PyMuPDF的主要职责
+PyMuPDF在这个医疗文档处理系统中扮演着PDF预处理器的关键角色，它不负责OCR，而是为AWS Textract准备和优化PDF文档。
+
+🎯 具体功能详解
+1. PDF文档流式读取
+# 从S3直接读取PDF到内存，无需下载到本地
+pdf_content = self.document.s3_storage_uri.open().read()
+doc = fitz.open(stream=pdf_content, filetype="pdf")
+2. 多页PDF智能分割
+def _split_pdf_pages(doc: DocumentModel) -> list[str]:
+    """将多页PDF分割为单页，为Textract优化"""
+    # 打开PDF并检查页数
+    pdf_document = fitz.open(stream=pdf_content, filetype="pdf")
+    page_count = len(pdf_document)
+    
+    # 页数限制检查
+    if page_count > MAX_PDF_PAGES:  # MAX_PDF_PAGES = 5
+        return [s3_key]  # 超过限制，返回原文件
+    
+    # 分割每一页
+    for page_num in range(page_count):
+        # 创建新的单页PDF
+        single_page_pdf = fitz.open()
+        single_page_pdf.insert_pdf(
+            pdf_document,
+            from_page=page_num,
+            to_page=page_num,
+        )
+        
+        # 转换为字节流
+        page_bytes = single_page_pdf.tobytes()
+        
+为什么需要分割？
+Textract限制: AWS Textract对多页PDF处理有限制
+并行处理: 单页可以并行发送给Textract
+错误隔离: 单页失败不影响其他页面
+内存优化: 避免大文件一次性处理
+
+3. 页面图像转换
+def _process_single_page(self, page, page_num: int, s3_uri: str) -> ProcessedPage:
+    """将PDF页面转换为高质量图像"""
+    # 提取文本（如果PDF有文本层）
+    text = page.get_text()
+    # 转换为高质量图像
+    pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))  # 2x缩放提高质量
+    image_bytes = pix.tobytes("jpeg")
+    
+    # 发送给AWS Rekognition进行图像分析
+    rekognition_response = self._analyze_image(image_bytes, page_num)
+
+图像转换的用途：
+Rekognition分析: 识别医疗图像、伤口照片、产品图片
+质量优化: 2x缩放提高OCR和图像识别精度
+格式标准化: 统一转换为JPEG格式
+
+🚫 PyMuPDF不负责的功能
+1. 不做OCR
+# PyMuPDF只提取现有文本，不进行OCR
+text = page.get_text()  # 只能提取PDF中已有的文本层
+
+# OCR由AWS Textract负责
+textract_response = textract.analyze_document(...)
+2. 不做AI分析
+# PyMuPDF只转换图像，不分析内容
+image_bytes = pix.tobytes("jpeg")
+
+3. 不做数据提取
+# PyMuPDF不理解医疗表单结构
+# 数据提取由Claude AI + Textract结果完成
+structured_result = claude_model.invoke(textract_data)

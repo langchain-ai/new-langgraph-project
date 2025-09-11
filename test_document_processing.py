@@ -20,8 +20,24 @@ if __name__ == "__main__":
     os.environ['AWS_SECRET_ACCESS_KEY'] = 'test'
     os.environ['AWS_ENDPOINT_URL'] = 'http://localhost:4566'
     
-    print('正在处理文档...')
-    result = asyncio.run(test())
+    # 检查命令行参数
+    if len(sys.argv) > 1:
+        # 使用命令行指定的文件
+        s3_key = sys.argv[1]
+        if not s3_key.startswith('documents/'):
+            s3_key = f'documents/{s3_key}'
+    else:
+        # 默认文件
+        s3_key = 'documents/cms1500_filled_dummy.pdf'
+    
+    print(f'正在处理文档: {s3_key}...')
+    
+    async def test_specific():
+        processor = LangGraphProcessor(s3_bucket='medical-claims-documents')
+        result = await processor.process_document(s3_key)
+        return result
+    
+    result = asyncio.run(test_specific())
     
     # 格式化输出结果
     print('\n========== 文档分析结果 ==========')

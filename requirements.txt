@@ -13,6 +13,7 @@ boto3
 
 # PDF processing
 PyPDF2
+PyMuPDF
 pdfplumber
 pdf2image
 pillow

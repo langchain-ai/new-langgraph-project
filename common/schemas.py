@@ -26,7 +26,7 @@ class ProcessingInfo(BaseModel):
     confidence_score: float = Field(..., description="Classification confidence score")
     processing_time_ms: int = Field(..., description="Processing time in milliseconds")
     classification_reason: str = Field(..., description="Reason for classification decision")
-    indicators_found: int = Field(0, description="Number of CMS/HCFA indicators found")
+    indicators_found: List[str] = Field(default_factory=list, description="List of CMS/HCFA indicators found")
 
 
 class FileInfo(BaseModel):

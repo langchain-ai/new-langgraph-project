@@ -168,7 +168,7 @@ async def process_with_textract(state: State, runtime: Runtime[Context]) -> Dict
 
 
 async def process_with_openai(state: State, runtime: Runtime[Context]) -> Dict[str, Any]:
-    """Process document using OpenAI GPT-4o."""
+    """Process document using OpenAI GPT-4o with intelligent page-by-page processing."""
     if state.processor != ProcessorType.OPENAI.value:
         return {}
     
@@ -177,25 +177,19 @@ async def process_with_openai(state: State, runtime: Runtime[Context]) -> Dict[s
     from openai import OpenAI
     import io
     import pdf2image
+    import PyPDF2
     
     # Get API key from environment or context
     api_key = runtime.context.get("openai_api_key") or os.getenv("OPENAI_API_KEY")
     
     if not api_key:
-        # Return mock data if no API key
-        return {
-            "openai_response": {
-                "model": "gpt-4o",
-                "note": "No OpenAI API key provided - returning mock data",
-                "mock_data": True
-            }
-        }
+        raise ValueError("OpenAI API key is required. Please set OPENAI_API_KEY environment variable.")
     
     try:
         # Initialize OpenAI client
         client = OpenAI(api_key=api_key)
         
-        # Get document from S3
+        # Get document metadata from S3
         bucket = runtime.context.get("s3_bucket", "medical-documents")
         region = runtime.context.get("aws_region", "us-east-1")
         endpoint_url = os.getenv("AWS_ENDPOINT_URL")
@@ -208,17 +202,116 @@ async def process_with_openai(state: State, runtime: Runtime[Context]) -> Dict[s
             aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY", "test")
         )
         
-        # Download document
-        response = s3_client.get_object(Bucket=bucket, Key=state.s3_key)
-        pdf_content = response['Body'].read()
+        # Get file metadata first
+        head_response = s3_client.head_object(Bucket=bucket, Key=state.s3_key)
+        file_size = head_response['ContentLength']
         
-        # Convert PDF to image (first page)
-        images = pdf2image.convert_from_bytes(pdf_content, dpi=200, first_page=1, last_page=1)
+        # Intelligent download strategy
+        if file_size < 500000:  # Less than 500KB - download full file
+            logger.info(f"Small file ({file_size} bytes), downloading full document")
+            response = s3_client.get_object(Bucket=bucket, Key=state.s3_key)
+            pdf_content = response['Body'].read()
+            download_strategy = "full"
+        else:
+            # Large file - download progressively
+            logger.info(f"Large file ({file_size} bytes), using progressive download")
+            
+            # Download first 1MB for initial pages
+            range_header = 'bytes=0-1048575'
+            response = s3_client.get_object(
+                Bucket=bucket, 
+                Key=state.s3_key,
+                Range=range_header
+            )
+            pdf_content = response['Body'].read()
+            download_strategy = "partial"
         
-        # Convert to base64
-        buffered = io.BytesIO()
-        images[0].save(buffered, format="PNG")
-        img_base64 = base64.b64encode(buffered.getvalue()).decode()
+        # Determine number of pages to process
+        pdf_reader = PyPDF2.PdfReader(io.BytesIO(pdf_content))
+        total_pages = len(pdf_reader.pages)
+        
+        # Quick detection with low resolution first page
+        logger.info("Performing quick CMS-1500 detection...")
+        quick_images = pdf2image.convert_from_bytes(
+            pdf_content, 
+            dpi=100,  # Low resolution for quick check
+            first_page=1, 
+            last_page=1
+        )
+        
+        # Quick detection prompt
+        quick_buffered = io.BytesIO()
+        quick_images[0].save(quick_buffered, format="PNG")
+        quick_img_base64 = base64.b64encode(quick_buffered.getvalue()).decode()
+        
+        quick_response = client.chat.completions.create(
+            model="gpt-4o-mini",  # Use faster mini model for quick check
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Is this a CMS-1500 or HCFA-1500 medical claim form? Reply with JSON: {\"is_cms1500\": true/false, \"confidence\": 0-1, \"needs_page_2\": true/false}"},
+                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{quick_img_base64}", "detail": "low"}}
+                ]
+            }],
+            temperature=0,
+            max_tokens=100,
+            response_format={"type": "json_object"}
+        )
+        
+        quick_result = json.loads(quick_response.choices[0].message.content)
+        logger.info(f"Quick detection result: {quick_result}")
+        
+        # Determine pages to process based on quick detection
+        if not quick_result.get("is_cms1500", False):
+            logger.info("Not a CMS-1500 form, skipping detailed extraction")
+            return {
+                "openai_response": {
+                    "model": "gpt-4o",
+                    "not_cms1500": True,
+                    "quick_detection": quick_result
+                }
+            }
+        
+        # Determine how many pages to process
+        if quick_result.get("needs_page_2", False) and total_pages > 1:
+            pages_to_process = min(2, total_pages)
+            logger.info(f"Processing {pages_to_process} pages (form continues on page 2)")
+        else:
+            pages_to_process = 1
+            logger.info("Processing single page CMS-1500")
+        
+        # If we need more pages and only downloaded partial, get the rest
+        if pages_to_process > 1 and download_strategy == "partial":
+            # Download up to 2MB for 2-page form
+            response = s3_client.get_object(
+                Bucket=bucket,
+                Key=state.s3_key,
+                Range='bytes=0-2097151'
+            )
+            pdf_content = response['Body'].read()
+        
+        # Convert required pages to high quality images
+        logger.info(f"Converting {pages_to_process} pages at high resolution...")
+        images = pdf2image.convert_from_bytes(
+            pdf_content, 
+            dpi=200,  # Standard resolution for extraction
+            first_page=1, 
+            last_page=pages_to_process
+        )
+        
+        # Combine images to base64
+        image_contents = []
+        for i, img in enumerate(images):
+            buffered = io.BytesIO()
+            img.save(buffered, format="PNG")
+            img_base64 = base64.b64encode(buffered.getvalue()).decode()
+            image_contents.append({
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:image/png;base64,{img_base64}",
+                    "detail": "high"
+                }
+            })
         
         # Create prompt for GPT-4o
         prompt = """You are a medical claims processing expert. Analyze this CMS-1500/HCFA-1500 insurance claim form and extract all relevant information.
@@ -267,24 +360,17 @@ Please extract and return the following information in JSON format:
 If any field is not clearly visible or not present, use null for that field.
 """
         
-        # Call GPT-4o
+        # Prepare message content with text prompt and all images
+        message_content = [{"type": "text", "text": prompt}] + image_contents
+        
+        # Call GPT-4o for detailed extraction
+        logger.info("Calling GPT-4o for detailed data extraction...")
         response = client.chat.completions.create(
             model="gpt-4o",  # Using GPT-4o for better performance
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/png;base64,{img_base64}",
-                                "detail": "high"  # High detail for form recognition
-                            }
-                        }
-                    ]
-                }
-            ],
+            messages=[{
+                "role": "user",
+                "content": message_content
+            }],
             temperature=0.1,  # Low temperature for consistent extraction
             max_tokens=2000,
             response_format={"type": "json_object"}  # Ensure JSON response
@@ -293,14 +379,32 @@ If any field is not clearly visible or not present, use null for that field.
         # Parse the response
         extracted_data = json.loads(response.choices[0].message.content)
         
+        # Calculate cost savings
+        bytes_downloaded = len(pdf_content)
+        bytes_saved = max(0, file_size - bytes_downloaded)
+        savings_percentage = (bytes_saved / file_size * 100) if file_size > 0 else 0
+        
+        logger.info(f"Extraction complete. Downloaded {bytes_downloaded}/{file_size} bytes ({100-savings_percentage:.1f}% of file)")
+        
         return {
             "openai_response": {
                 "model": "gpt-4o",
                 "extracted_data": extracted_data,
+                "pages_processed": pages_to_process,
+                "total_pages": total_pages,
+                "quick_detection": quick_result,
+                "optimization_stats": {
+                    "file_size": file_size,
+                    "bytes_downloaded": bytes_downloaded,
+                    "bytes_saved": bytes_saved,
+                    "savings_percentage": savings_percentage,
+                    "download_strategy": download_strategy
+                },
                 "usage": {
                     "prompt_tokens": response.usage.prompt_tokens,
                     "completion_tokens": response.usage.completion_tokens,
-                    "total_tokens": response.usage.total_tokens
+                    "total_tokens": response.usage.total_tokens,
+                    "quick_check_tokens": quick_response.usage.total_tokens
                 }
             }
         }
@@ -376,14 +480,9 @@ async def extract_fields(state: State, runtime: Runtime[Context]) -> Dict[str, A
             extracted["balance_due"] = float(financial.get("balance_due", 0))
             
         else:
-            # Return mock data if no real extraction
+            # No OpenAI response available
             extracted = {
-                "patient_name": "John Doe",
-                "patient_dob": "1980-01-01",
-                "insured_id": "MOCK123456",
-                "diagnosis_codes": ["Z00.00"],
-                "procedure_codes": ["99213"],
-                "total_charge": 150.00
+                "error": "No data extracted - OpenAI processing may have failed"
             }
     
     return extracted

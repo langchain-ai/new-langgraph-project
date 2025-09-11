@@ -12,7 +12,6 @@ services:
       - DOCKER_HOST=unix:///var/run/docker.sock
       - AWS_DEFAULT_REGION=us-east-1
     volumes:
-      - localstack-data:/tmp/localstack
       - /var/run/docker.sock:/var/run/docker.sock
       - ./scripts/localstack-init.sh:/docker-entrypoint-initaws.d/init.sh
       - ./tests/test-files:/docker-entrypoint-initaws.d/test-files
@@ -81,5 +80,3 @@ networks:
   ai-agents-network:
     driver: bridge
 
-volumes:
-  localstack-data:

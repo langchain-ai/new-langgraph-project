@@ -1,0 +1,35 @@
+新增一个/api/v2/process文件处理接口，处理s3里面cms-1500表格文档，实现功能如下：
+   1. 接收s3的文件路径，不下载文件，直接在内存中处理 ，读取到内存 
+   文档提取工具 (document_extraction.py)
+   # 从S3获取PDF内容并在内存中处理
+response = s3.get_object(Bucket=settings.AWS_STORAGE_BUCKET_NAME, Key=s3_key)
+pdf_content = response["Body"].read()
+# 使用PyMuPDF打开PDF
+pdf_document = fitz.open(stream=pdf_content, filetype="pdf")
+# 分割多页PDF
+for page_num in range(page_count):
+    single_page_pdf = fitz.open()
+    single_page_pdf.insert_pdf(pdf_document, from_page=page_num, to_page=page_num)
+    page_bytes = single_page_pdf.tobytes()
+
+2. 根据CMS-1500的识别关键指标 判断如是是cms-1500表格，则输出Patient Names，DOB，Insurance ID 和 Diagnosis ，Procedures等 
+识别指标：
+1. 直接文本信号
+标题/页眉常见字样：
+CMS-1500
+HCFA-1500
+Health Insurance Claim Form
+维护机构与版权信息：
+NUCC 或 National Uniform Claim Committee
+页脚的 OMB No. 和 NUCC/CMS 版权信息
+2. 表格编号（1–33）
+CMS-1500 独有的连续编号字段，例如：
+1a. INSURED'S I.D. NUMBER
+2. PATIENT'S NAME
+3. PATIENT'S BIRTH DATE
+14. DATE OF CURRENT ILLNESS, INJURY, PREGNANCY
+17. NAME OF REFERRING PROVIDER
+21. DIAGNOSIS CODES (ICD IND. A–L)
+24A–24J 服务明细行（含 CPT/HCPCS、MODIFIER、Diagnosis Pointer、Charges 等）
+32. SERVICE FACILITY LOCATION
+33. BILLING PROVIDER INFO / 33a. NPI

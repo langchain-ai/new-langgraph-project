@@ -23,6 +23,9 @@ sys.path.insert(0, project_root)
 from common.schemas import ProcessRequest, ProcessResponse, ProcessingInfo, FileInfo, ErrorResponse
 from api.services.langgraph_processor import LangGraphProcessor
 
+# Import HCFA Reader Agent
+from agents.hcfa_reader import graph as hcfa_reader_graph
+
 # Initialize FastAPI app
 app = FastAPI(
     title="Medical Claims Processor",
@@ -55,6 +58,7 @@ async def root():
         "status": "healthy",
         "endpoints": {
             "process": "/api/v1/process",
+            "process_v2": "/api/v2/process",
             "health": "/health",
             "docs": "/docs"
         }
@@ -168,6 +172,134 @@ async def process_document(request: ProcessRequest):
                 "error": {
                     "code": "PROCESSING_ERROR",
                     "message": f"Document processing failed: {str(e)}",
+                    "s3_key": request.s3_key
+                }
+            }
+        )
+
+
+@app.post("/api/v2/process")
+async def process_cms1500_document(request: ProcessRequest):
+    """
+    Process CMS-1500/HCFA-1500 documents from S3 with in-memory processing.
+    
+    This endpoint:
+    1. Loads the PDF directly from S3 into memory (no disk download)
+    2. Detects if it's a CMS-1500/HCFA-1500 form
+    3. Extracts structured data (Patient, Insurance, Diagnosis, Procedures, etc.)
+    4. Returns validated JSON response
+    
+    Args:
+        request: ProcessRequest with S3 key and optional bucket
+        
+    Returns:
+        Structured JSON with extracted CMS-1500 data
+        
+    Raises:
+        HTTPException: If file not found or processing fails
+    """
+    import time
+    start_time = time.time()
+    
+    try:
+        logger.info(f"Processing CMS-1500 document: {request.s3_key}")
+        
+        # Prepare context for HCFA Reader
+        context = {
+            "s3_bucket": request.bucket or os.getenv("S3_BUCKET", "medical-documents"),
+            "aws_region": os.getenv("AWS_DEFAULT_REGION", "us-east-1"),
+            "openai_api_key": os.getenv("OPENAI_API_KEY"),
+            "enable_validation": True,
+            "max_pages": 2  # CMS-1500 forms are typically 1-2 pages
+        }
+        
+        # Initialize state
+        initial_state = {
+            "s3_key": request.s3_key,
+            "s3_bucket": context["s3_bucket"]
+        }
+        
+        # Execute the HCFA Reader graph
+        result = await hcfa_reader_graph.ainvoke(
+            initial_state,
+            config={"configurable": context}
+        )
+        
+        # Calculate processing time
+        processing_time_ms = int((time.time() - start_time) * 1000)
+        
+        # Check if document was identified as CMS-1500
+        if not result.get("is_cms1500", False):
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "status": "failed",
+                    "error": {
+                        "code": "NOT_CMS1500",
+                        "message": "Document is not a CMS-1500/HCFA-1500 form",
+                        "document_type": result.get("document_type", "unknown"),
+                        "confidence": result.get("confidence", 0.0)
+                    }
+                }
+            )
+        
+        # Build response
+        response = {
+            "status": result.get("processing_status", "failed"),
+            "processing_info": {
+                "document_type": result.get("document_type", "cms_1500"),
+                "confidence": result.get("confidence", 0.0),
+                "indicators_found": result.get("indicators_found", []),
+                "processing_time_ms": processing_time_ms,
+                "pages_processed": result.get("pages_processed", 0),
+                "validation_errors": result.get("validation_errors", [])
+            },
+            "file_info": {
+                "s3_key": request.s3_key,
+                "s3_bucket": context["s3_bucket"],
+                "file_size": result.get("file_size", 0),
+                "s3_uri": f"s3://{context['s3_bucket']}/{request.s3_key}"
+            },
+            "extracted_data": {
+                "patient": result.get("patient_info", {}),
+                "insurance": result.get("insurance_info", {}),
+                "diagnosis": result.get("diagnosis_info", {}),
+                "procedures": result.get("procedures_info", []),
+                "provider": result.get("provider_info", {}),
+                "billing": result.get("billing_info", {})
+            },
+            "optimization_stats": result.get("optimization_stats", {})
+        }
+        
+        logger.info(f"Successfully processed CMS-1500 document in {processing_time_ms}ms")
+        return response
+        
+    except HTTPException:
+        raise
+        
+    except FileNotFoundError as e:
+        logger.error(f"File not found: {request.s3_key}")
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "status": "failed",
+                "error": {
+                    "code": "FILE_NOT_FOUND",
+                    "message": str(e),
+                    "s3_key": request.s3_key
+                }
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Processing failed for {request.s3_key}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "status": "failed",
+                "error": {
+                    "code": "PROCESSING_ERROR",
+                    "message": f"CMS-1500 processing failed: {str(e)}",
                     "s3_key": request.s3_key
                 }
             }
