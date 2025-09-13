@@ -13,16 +13,18 @@ Processing flow:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, TypedDict, List, Optional
+from typing import Any, Dict, TypedDict, List, Optional, Tuple
 from enum import Enum
 import os
 import logging
 import boto3
 import io
 import fitz  # PyMuPDF
+import numpy as np
 
 from langgraph.graph import StateGraph
 from langgraph.runtime import Runtime
+from common.image_preprocessing import PDFImagePreprocessor
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +49,8 @@ class Context(TypedDict):
     aws_region: str
     enable_validation: bool
     max_pages: int  # Maximum pages to process (CMS-1500 is typically 1-2 pages)
+    enable_preprocessing: bool  # Enable image preprocessing for better OCR
+    preprocessing_dpi: int  # DPI for image preprocessing (default 300)
 
 
 @dataclass
@@ -62,6 +66,10 @@ class State:
     file_size: int = 0
     page_count: int = 0
     page_pdfs: List[bytes] = field(default_factory=list)  # Single-page PDFs for Textract
+    
+    # Preprocessed images for OCR
+    use_preprocessed: bool = False
+    preprocessed_data: List[Tuple[np.ndarray, bytes]] = field(default_factory=list)  # (image_array, png_bytes)
     
     # Document classification
     document_type: str = DocumentType.UNKNOWN.value
@@ -88,12 +96,12 @@ class State:
 
 
 async def load_from_s3(state: State, runtime: Runtime[Context] = None) -> Dict[str, Any]:
-    """Load PDF from S3 and split into single pages using PyMuPDF.
+    """Load PDF from S3 and optionally preprocess for better OCR.
     
     PyMuPDF responsibilities:
     - Stream PDF from S3 to memory
     - Split multi-page PDF into single pages
-    - Prepare for Textract processing
+    - Optional: Image preprocessing for OCR optimization
     """
     import time
     start_time = time.time()
@@ -101,6 +109,10 @@ async def load_from_s3(state: State, runtime: Runtime[Context] = None) -> Dict[s
     bucket = state.s3_bucket or (runtime.context.get("s3_bucket", "medical-documents") if runtime and runtime.context else "medical-documents")
     region = (runtime.context.get("aws_region", "us-east-1") if runtime and runtime.context else "us-east-1")
     endpoint_url = os.getenv("AWS_ENDPOINT_URL")
+    
+    # Preprocessing settings
+    enable_preprocessing = (runtime.context.get("enable_preprocessing", True) if runtime and runtime.context else True)
+    preprocessing_dpi = (runtime.context.get("preprocessing_dpi", 300) if runtime and runtime.context else 300)
     
     try:
         # Initialize S3 client
@@ -119,14 +131,65 @@ async def load_from_s3(state: State, runtime: Runtime[Context] = None) -> Dict[s
         pdf_content = response['Body'].read()
         file_size = len(pdf_content)
         
-        # Open PDF with PyMuPDF
+        logger.info(f"PDF loaded: {file_size:,} bytes")
+        
+        # Check if preprocessing is enabled
+        if enable_preprocessing:
+            logger.info("Image preprocessing enabled for better OCR")
+            
+            try:
+                # Initialize preprocessor
+                preprocessor = PDFImagePreprocessor(
+                    dpi=preprocessing_dpi,
+                    remove_red=True,  # Remove red tints for better OCR
+                    auto_rotate=True  # Auto-correct skewed scans
+                )
+                
+                # Preprocess PDF (returns list of (image_array, png_bytes))
+                preprocessed_data = preprocessor.preprocess_pdf_bytes(pdf_content)
+                
+                logger.info(f"Preprocessed {len(preprocessed_data)} pages successfully")
+                
+                # Also keep original PDFs as fallback
+                doc = fitz.open(stream=pdf_content, filetype="pdf")
+                page_count = doc.page_count
+                max_pages = (runtime.context.get("max_pages", 3) if runtime and runtime.context else 3)
+                pages_to_process = min(page_count, max_pages)
+                
+                page_pdfs = []
+                for page_num in range(pages_to_process):
+                    single_page_pdf = fitz.open()
+                    single_page_pdf.insert_pdf(doc, from_page=page_num, to_page=page_num)
+                    page_pdfs.append(single_page_pdf.tobytes())
+                    single_page_pdf.close()
+                
+                doc.close()
+                
+                processing_time = int((time.time() - start_time) * 1000)
+                logger.info(f"PDF preprocessing complete in {processing_time}ms")
+                
+                return {
+                    "pdf_content": pdf_content,
+                    "file_size": file_size,
+                    "page_count": len(preprocessed_data),
+                    "page_pdfs": page_pdfs,
+                    "use_preprocessed": True,
+                    "preprocessed_data": preprocessed_data,
+                    "processing_time_ms": processing_time
+                }
+                
+            except Exception as e:
+                logger.warning(f"Preprocessing failed, falling back to original PDFs: {e}")
+                # Fall through to original processing
+        
+        # Original processing (no preprocessing or preprocessing failed)
         doc = fitz.open(stream=pdf_content, filetype="pdf")
         page_count = doc.page_count
         
-        logger.info(f"PDF loaded: {file_size:,} bytes, {page_count} pages")
+        logger.info(f"PDF has {page_count} pages")
         
-        # Determine pages to process (CMS-1500 max 2 pages)
-        max_pages = (runtime.context.get("max_pages", 2) if runtime and runtime.context else 2)
+        # Determine pages to process
+        max_pages = (runtime.context.get("max_pages", 3) if runtime and runtime.context else 3)
         pages_to_process = min(page_count, max_pages)
         
         # Split PDF into single pages for Textract
@@ -152,13 +215,15 @@ async def load_from_s3(state: State, runtime: Runtime[Context] = None) -> Dict[s
         doc.close()
         
         processing_time = int((time.time() - start_time) * 1000)
-        logger.info(f"PDF preprocessing complete in {processing_time}ms")
+        logger.info(f"PDF splitting complete in {processing_time}ms")
         
         return {
             "pdf_content": pdf_content,
             "file_size": file_size,
             "page_count": page_count,
             "page_pdfs": page_pdfs,
+            "use_preprocessed": False,
+            "preprocessed_data": [],
             "processing_time_ms": processing_time
         }
         
@@ -171,11 +236,19 @@ async def detect_cms1500(state: State, runtime: Runtime[Context] = None) -> Dict
     """Use AWS Textract OCR to detect if document is CMS-1500/HCFA-1500.
     
     Textract responsibilities:
-    - OCR the first page
+    - OCR the first page (preprocessed if available)
     - Extract text for identification
     """
     
-    if not state.page_pdfs:
+    # Check if we have preprocessed images or original PDFs
+    if state.use_preprocessed and state.preprocessed_data:
+        logger.info("Using preprocessed images for CMS-1500 detection")
+        # Use preprocessed PNG bytes for better OCR
+        first_page_bytes = state.preprocessed_data[0][1]  # Get PNG bytes from first page
+    elif state.page_pdfs:
+        logger.info("Using original PDF for CMS-1500 detection")
+        first_page_bytes = state.page_pdfs[0]
+    else:
         logger.error("No pages to analyze")
         return {"is_cms1500": False, "confidence": 0.0}
     
@@ -190,9 +263,9 @@ async def detect_cms1500(state: State, runtime: Runtime[Context] = None) -> Dict
         )
         
         # OCR the first page
-        logger.info("Running Textract OCR on first page")
+        logger.info(f"Running Textract OCR on first page ({'preprocessed' if state.use_preprocessed else 'original'})")
         response = textract_client.detect_document_text(
-            Document={'Bytes': state.page_pdfs[0]}
+            Document={'Bytes': first_page_bytes}
         )
         
         # Extract text from Textract response
@@ -317,13 +390,23 @@ async def extract_data(state: State, runtime: Runtime[Context] = None) -> Dict[s
         
         all_extracted_data = []
         
+        # Determine which pages to process
+        if state.use_preprocessed and state.preprocessed_data:
+            # Use preprocessed images for better extraction
+            logger.info(f"Using {len(state.preprocessed_data)} preprocessed images for extraction")
+            pages_to_process = [(i, data[1]) for i, data in enumerate(state.preprocessed_data)]
+        else:
+            # Use original PDF pages
+            logger.info(f"Using {len(state.page_pdfs)} original PDF pages for extraction")
+            pages_to_process = [(i, pdf) for i, pdf in enumerate(state.page_pdfs)]
+        
         # Process each page with Textract
-        for i, page_pdf in enumerate(state.page_pdfs):
-            logger.info(f"Running Textract analysis on page {i + 1}")
+        for i, page_bytes in pages_to_process:
+            logger.info(f"Running Textract analysis on page {i + 1} ({'preprocessed' if state.use_preprocessed else 'original'})")
             
             # Analyze document for forms and tables
             response = textract_client.analyze_document(
-                Document={'Bytes': page_pdf},
+                Document={'Bytes': page_bytes},
                 FeatureTypes=['FORMS', 'TABLES']
             )
             

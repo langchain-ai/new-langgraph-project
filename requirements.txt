@@ -18,6 +18,10 @@ pdfplumber
 pdf2image
 pillow
 
+# Image preprocessing
+opencv-python==4.8.1.78
+numpy>=1.24.0
+
 # OpenAI integration
 openai
 
