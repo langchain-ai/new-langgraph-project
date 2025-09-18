@@ -12,7 +12,7 @@ from langchain_ollama import ChatOllama
 from src.toolkits.example_toolkit import ExampleToolkit
 from src.toolkits.dpc_toolkit import DPCToolkit
 from src.mcp.mcp_client import get_mcp_tools_optional
-from src.agent.prompt import STC_AGENT_PROMPT
+from src.prompts.stc_prompt import STC_PROMPT
 
 load_dotenv()
 
@@ -43,7 +43,7 @@ tools = example_toolkit + dpc_toolkit + mcp_tools
 stc_agent = create_react_agent(
     model=model, 
     tools=tools, 
-    prompt=STC_AGENT_PROMPT
+    prompt=STC_PROMPT
 )
 
 

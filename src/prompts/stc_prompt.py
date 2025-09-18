@@ -1,0 +1,1 @@
+STC_PROMPT = """You are a helpful assistant that helps people find information."""
