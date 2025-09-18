@@ -19,37 +19,28 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 
 # ==================== LLM =====================
-model = init_chat_model(model_provider="openai", model="gpt-4.1-mini", api_key=os.getenv("OPENAI_API_KEY"))
+# model = init_chat_model(model_provider="openai", model=os.getenv("MODEL_NAME"), api_key=os.getenv("OPENAI_API_KEY"))
 
-# model = ChatOllama(
-#     model="qwen3:1.7b",
-#     validate_model_on_init=True,
-#     temperature=1.0,
-#     seed=42,
-#     reasoning=False,
-#     num_ctx=16000,
-#     base_url="http://localhost:11434",
-#     # other params ...
-# )
+model = ChatOllama(
+    model=os.getenv("MODEL_NAME"),
+    validate_model_on_init=True,
+    temperature=1.0,
+    seed=42,
+    reasoning=False,
+    num_ctx=16000,
+    base_url="http://localhost:11434",
+    # other params ...
+)
 
 # ==================== TOOLS ====================
 example_toolkit = ExampleToolkit.get_tools()
 dpc_toolkit = DPCToolkit.get_tools()
-mcp_tools = get_mcp_tools_optional() 
+mcp_tools = get_mcp_tools_optional()
 
 tools = example_toolkit + dpc_toolkit + mcp_tools
 
 # ===================== CREATE AGENT ===========================
-stc_agent = create_react_agent(
-    model=model, 
-    tools=tools, 
-    prompt=STC_PROMPT
-)
-
-
-
-
-
+stc_agent = create_react_agent(model=model, tools=tools, prompt=STC_PROMPT)
 
 
 # ====================== RUN
