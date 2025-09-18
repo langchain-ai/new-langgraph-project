@@ -1,0 +1,15 @@
+{
+  "servers": {
+    "deepwiki": {
+      "url": "https://mcp.deepwiki.com/mcp",
+      "transport": "streamable_http"
+    },
+    "dnext_coder": {
+      "url": "https://dnext-coder-mcp-server.pia-team.com/mcp/",
+      "transport": "streamable_http",
+      "headers": {
+        "DS-API-KEY": "${DS_API_KEY}"
+      }
+    }
+  }
+}
