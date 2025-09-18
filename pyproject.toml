@@ -7,9 +7,15 @@ authors = [
 ]
 readme = "README.md"
 license = { text = "MIT" }
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 dependencies = [
+    "langchain>=0.3.27",
+    "langchain-mcp-adapters>=0.1.9",
+    "langchain-ollama>=0.3.8",
+    "langchain-openai>=0.3.33",
     "langgraph>=0.2.6",
+    "langgraph-cli[inmem]>=0.4.2",
+    "langsmith==0.3.45",
     "python-dotenv>=1.0.1",
 ]
 
@@ -35,9 +41,6 @@ packages = ["langgraph.templates.agent", "agent"]
 lint.select = [
     "E",    # pycodestyle
     "F",    # pyflakes
-    "I",    # isort
-    "D",    # pydocstyle
-    "D401", # First line should be in imperative mood
     "T201",
     "UP",
 ]
