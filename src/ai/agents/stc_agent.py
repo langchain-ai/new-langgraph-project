@@ -9,10 +9,10 @@ from langchain.chat_models import init_chat_model
 from langgraph.prebuilt import create_react_agent
 from langchain_ollama import ChatOllama
 
-from src.toolkits.example_toolkit import ExampleToolkit
-from src.toolkits.dpc_toolkit import DPCToolkit
-from src.mcp.mcp_client import get_mcp_tools_optional
-from src.prompts.stc_prompt import STC_PROMPT
+from src.ai.toolkits.example_toolkit import ExampleToolkit
+from src.ai.toolkits.dpc_toolkit import DPCToolkit
+from src.ai.mcp.mcp_client import get_mcp_tools_optional
+from src.ai.prompts.stc_prompt import STC_PROMPT
 
 load_dotenv()
 
@@ -33,11 +33,12 @@ model = ChatOllama(
 )
 
 # ==================== TOOLS ====================
-example_toolkit = ExampleToolkit.get_tools()
 dpc_toolkit = DPCToolkit.get_tools()
-mcp_tools = get_mcp_tools_optional()
 
-tools = example_toolkit + dpc_toolkit + mcp_tools
+# example_toolkit = ExampleToolkit.get_tools()
+# mcp_tools = get_mcp_tools_optional()
+
+tools = dpc_toolkit
 
 # ===================== CREATE AGENT ===========================
 stc_agent = create_react_agent(model=model, tools=tools, prompt=STC_PROMPT)
