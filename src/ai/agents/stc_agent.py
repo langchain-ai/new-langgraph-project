@@ -27,7 +27,8 @@ model = ChatOllama(
     temperature=1.0,
     seed=42,
     reasoning=False,
-    num_ctx=16000,
+    num_ctx=32000,
+    max_tokens=4096,
     base_url="http://localhost:11434",
     # other params ...
 )
