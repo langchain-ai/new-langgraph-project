@@ -1,61 +1,56 @@
-# New LangGraph Project
+# Product Catalog Agent Backend
 
-[![CI](https://github.com/langchain-ai/new-langgraph-project/actions/workflows/unit-tests.yml/badge.svg)](https://github.com/langchain-ai/new-langgraph-project/actions/workflows/unit-tests.yml)
-[![Integration Tests](https://github.com/langchain-ai/new-langgraph-project/actions/workflows/integration-tests.yml/badge.svg)](https://github.com/langchain-ai/new-langgraph-project/actions/workflows/integration-tests.yml)
+A backend agentic system for managing product catalog data (offering, specification, characteristic, price) using MongoDB and LangGraph.
 
-This template demonstrates a simple application implemented using [LangGraph](https://github.com/langchain-ai/langgraph), designed for showing how to get started with [LangGraph Server](https://langchain-ai.github.io/langgraph/concepts/langgraph_server/#langgraph-server) and using [LangGraph Studio](https://langchain-ai.github.io/langgraph/concepts/langgraph_studio/), a visual debugging IDE.
+## Features
 
-<div align="center">
-  <img src="./static/studio_ui.png" alt="Graph view in LangGraph studio UI" width="75%" />
-</div>
+- Upsert, filter, and list tools for all product catalog entities
+- MongoDB Atlas or local MongoDB support
+- LLM agent integration (Ollama, LangGraph)
 
-The core logic defined in `src/agent/graph.py`, showcases an single-step application that responds with a fixed string and the configuration provided.
+## Prerequisites
 
-You can extend this graph to orchestrate more complex agentic workflows that can be visualized and debugged in LangGraph Studio.
+- Python 3.10+
+- Ollama (for local LLMs)
+- MongoDB Atlas account or local MongoDB instance
 
-## Getting Started
+## Setup
 
-1. Install dependencies, along with the [LangGraph CLI](https://langchain-ai.github.io/langgraph/concepts/langgraph_cli/), which will be used to run the server.
+1. Install dependencies with [uv](https://github.com/astral-sh/uv):
 
-```bash
-cd path/to/your/app
-pip install -e . "langgraph-cli[inmem]"
+	```sh
+	uv sync
+	```
+
+2. Copy the example environment file and edit as needed:
+
+	```sh
+	cp .env.example .env
+	```
+	- Set `MONGODB_URI` and `MONGODB_DB_NAME` for your MongoDB instance (Atlas or local)
+	- Set `MODEL_NAME` for your LLM (default: qwen3:1.7b)
+
+## Running the Project
+
+Run:
+
+```sh
+./run.sh
 ```
 
-2. (Optional) Customize the code and project as needed. Create a `.env` file if you need to use secrets.
+This script loads environment variables, starts Ollama and the LLM model, and launches the LangGraph dev server.
 
-```bash
-cp .env.example .env
-```
+## Notes
 
-If you want to enable LangSmith tracing, add your LangSmith API key to the `.env` file.
+- Collections are auto-created in MongoDB: `product_offering`, `product_specification`, `product_characteristic`, `product_price`
+- You can use MongoDB Atlas (cloud) or a local MongoDB instance
+- All agent tools are available via the LangGraph agent
 
-```text
-# .env
-LANGSMITH_API_KEY=lsv2...
-```
+## Troubleshooting
 
-3. Start the LangGraph Server.
+- Ensure MongoDB is accessible from your machine (check IP whitelist for Atlas)
+- If Ollama or the LLM model fails to start, check your model name and Ollama installation
 
-```shell
-langgraph dev
-```
+---
 
-For more information on getting started with LangGraph Server, [see here](https://langchain-ai.github.io/langgraph/tutorials/langgraph-platform/local-server/).
-
-## How to customize
-
-1. **Define runtime context**: Modify the `Context` class in the `graph.py` file to expose the arguments you want to configure per assistant. For example, in a chatbot application you may want to define a dynamic system prompt or LLM to use. For more information on runtime context in LangGraph, [see here](https://langchain-ai.github.io/langgraph/agents/context/?h=context#static-runtime-context).
-
-2. **Extend the graph**: The core logic of the application is defined in [graph.py](./src/agent/graph.py). You can modify this file to add new nodes, edges, or change the flow of information.
-
-## Development
-
-While iterating on your graph in LangGraph Studio, you can edit past state and rerun your app from previous states to debug specific nodes. Local changes will be automatically applied via hot reload.
-
-Follow-up requests extend the same thread. You can create an entirely new thread, clearing previous history, using the `+` button in the top right.
-
-For more advanced features and examples, refer to the [LangGraph documentation](https://langchain-ai.github.io/langgraph/). These resources can help you adapt this template for your specific use case and build more sophisticated conversational agents.
-
-LangGraph Studio also integrates with [LangSmith](https://smith.langchain.com/) for more in-depth tracing and collaboration with teammates, allowing you to analyze and optimize your chatbot's performance.
-
+For more details, see the code and comments in each module.
