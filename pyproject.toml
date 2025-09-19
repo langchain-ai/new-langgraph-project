@@ -18,6 +18,8 @@ dependencies = [
     "langgraph>=0.2.6",
     "langgraph-cli[inmem]>=0.4.2",
     "langsmith==0.3.45",
+    "motor>=3.7.1",
+    "pymongo>=4.15.1",
     "python-dotenv>=1.0.1",
 ]
 
@@ -29,11 +31,11 @@ dev = ["mypy>=1.11.1", "ruff>=0.6.1"]
 requires = ["setuptools>=73.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
+
 [tool.setuptools]
-packages = ["langgraph.templates.agent", "agent"]
+packages = ["ai"]
 [tool.setuptools.package-dir]
-"langgraph.templates.agent" = "src/agent"
-"agent" = "src/agent"
+"ai" = "src/ai"
 
 
 [tool.setuptools.package-data]
