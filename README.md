@@ -41,7 +41,7 @@ LANGSMITH_API_KEY=lsv2...
 langgraph dev
 ```
 
-For more information on getting started with LangGraph Server, [see here](https://langchain-ai.github.io/langgraph/tutorials/langgraph-platform/local-server/).
+For more information on getting started with LangGraph Server, [see here](https://docs.langchain.com/oss/python/langgraph/local-server#run-a-local-server).
 
 ## How to customize
 
@@ -55,7 +55,7 @@ While iterating on your graph in LangGraph Studio, you can edit past state and r
 
 Follow-up requests extend the same thread. You can create an entirely new thread, clearing previous history, using the `+` button in the top right.
 
-For more advanced features and examples, refer to the [LangGraph documentation](https://langchain-ai.github.io/langgraph/). These resources can help you adapt this template for your specific use case and build more sophisticated conversational agents.
+For more advanced features and examples, refer to the [LangGraph documentation](https://docs.langchain.com/oss/python/langgraph/overview). These resources can help you adapt this template for your specific use case and build more sophisticated conversational agents.
 
 LangGraph Studio also integrates with [LangSmith](https://smith.langchain.com/) for more in-depth tracing and collaboration with teammates, allowing you to analyze and optimize your chatbot's performance.
 
