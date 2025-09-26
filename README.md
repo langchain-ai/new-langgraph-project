@@ -3,7 +3,7 @@
 [![CI](https://github.com/langchain-ai/new-langgraph-project/actions/workflows/unit-tests.yml/badge.svg)](https://github.com/langchain-ai/new-langgraph-project/actions/workflows/unit-tests.yml)
 [![Integration Tests](https://github.com/langchain-ai/new-langgraph-project/actions/workflows/integration-tests.yml/badge.svg)](https://github.com/langchain-ai/new-langgraph-project/actions/workflows/integration-tests.yml)
 
-This template demonstrates a simple application implemented using [LangGraph](https://github.com/langchain-ai/langgraph), designed for showing how to get started with [LangGraph Server](https://langchain-ai.github.io/langgraph/concepts/langgraph_server/#langgraph-server) and using [LangGraph Studio](https://langchain-ai.github.io/langgraph/concepts/langgraph_studio/), a visual debugging IDE.
+This template demonstrates a simple application implemented using [LangGraph](https://github.com/langchain-ai/langgraph), designed for showing how to get started with [LangGraph Server](https://docs.langchain.com/langgraph-platform/langgraph-server#langgraph-server) and using [LangGraph Studio](https://docs.langchain.com/langgraph-platform/langgraph-studio), a visual debugging IDE.
 
 <div align="center">
   <img src="./static/studio_ui.png" alt="Graph view in LangGraph studio UI" width="75%" />
@@ -15,7 +15,7 @@ You can extend this graph to orchestrate more complex agentic workflows that can
 
 ## Getting Started
 
-1. Install dependencies, along with the [LangGraph CLI](https://langchain-ai.github.io/langgraph/concepts/langgraph_cli/), which will be used to run the server.
+1. Install dependencies, along with the [LangGraph CLI](https://docs.langchain.com/langgraph-platform/langgraph-cli), which will be used to run the server.
 
 ```bash
 cd path/to/your/app
@@ -45,7 +45,7 @@ For more information on getting started with LangGraph Server, [see here](https:
 
 ## How to customize
 
-1. **Define runtime context**: Modify the `Context` class in the `graph.py` file to expose the arguments you want to configure per assistant. For example, in a chatbot application you may want to define a dynamic system prompt or LLM to use. For more information on runtime context in LangGraph, [see here](https://langchain-ai.github.io/langgraph/agents/context/?h=context#static-runtime-context).
+1. **Define runtime context**: Modify the `Context` class in the `graph.py` file to expose the arguments you want to configure per assistant. For example, in a chatbot application you may want to define a dynamic system prompt or LLM to use. For more information on runtime context in LangGraph, [see here](https://docs.langchain.com/oss/python/concepts/context#context-overview).
 
 2. **Extend the graph**: The core logic of the application is defined in [graph.py](./src/agent/graph.py). You can modify this file to add new nodes, edges, or change the flow of information.
 

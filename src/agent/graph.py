@@ -16,7 +16,7 @@ class Context(TypedDict):
     """Context parameters for the agent.
 
     Set these when creating assistants OR when invoking the graph.
-    See: https://langchain-ai.github.io/langgraph/cloud/how-tos/configuration_cloud/
+    See: https://docs.langchain.com/oss/python/concepts/context#context-overview
     """
 
     my_configurable_param: str
@@ -27,7 +27,7 @@ class State:
     """Input state for the agent.
 
     Defines the initial structure of incoming data.
-    See: https://langchain-ai.github.io/langgraph/concepts/low_level/#state
+    See: https://docs.langchain.com/oss/python/langgraph/use-graph-api#define-state
     """
 
     changeme: str = "example"
