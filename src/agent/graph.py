@@ -7,10 +7,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Dict
-from typing_extensions import TypedDict
 
 from langgraph.graph import StateGraph
 from langgraph.runtime import Runtime
+from typing_extensions import TypedDict
 
 
 class Context(TypedDict):
