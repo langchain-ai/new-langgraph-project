@@ -6,7 +6,8 @@ Returns a predefined response. Replace logic and configuration as needed.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, TypedDict
+from typing import Any, Dict
+from typing_extensions import TypedDict
 
 from langgraph.graph import StateGraph
 from langgraph.runtime import Runtime
@@ -40,7 +41,7 @@ async def call_model(state: State, runtime: Runtime[Context]) -> Dict[str, Any]:
     """
     return {
         "changeme": "output from call_model. "
-        f"Configured with {runtime.context.get('my_configurable_param')}"
+        f"Configured with {(runtime.context or {}).get('my_configurable_param')}"
     }
 
 
