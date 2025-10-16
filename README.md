@@ -38,7 +38,7 @@ LANGSMITH_API_KEY=lsv2...
 3. Start the LangGraph Server.
 
 ```shell
-langgraph dev
+langgraph dev --config ./langgraph.json --host 0.0.0.0 --port 8090 --tunnel
 ```
 
 For more information on getting started with LangGraph Server, [see here](https://langchain-ai.github.io/langgraph/tutorials/langgraph-platform/local-server/).
