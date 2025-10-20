@@ -52,3 +52,6 @@ graph = (
     .add_edge("__start__", "call_model")
     .compile(name="New Graph")
 )
+
+final_state = app.invoke({"question": "What is LangGraph?"})
+print(final_state["changeme"])
