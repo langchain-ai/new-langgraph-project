@@ -34,7 +34,7 @@ class State:
     changeme: str = "example"
 
 
-async def call_model(state: State, runtime: Runtime[Context]) -> Dict[str, Any]:
+def call_model(state: State, runtime: Runtime[Context]) -> Dict[str, Any]:
     """Process input and returns output.
 
     Can use runtime context to alter behavior.
