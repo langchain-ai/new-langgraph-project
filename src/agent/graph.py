@@ -41,7 +41,7 @@ def call_model(state: State, runtime: Runtime[Context]) -> Dict[str, Any]:
     """
     return {
         "changeme": "output from call_model. "
-        f"Configured with {(runtime.context or {}).get('my_configurable_param')}"
+        f"Configured with {(runtime.context or {}).get('question')}"
     }
 
 
