@@ -53,5 +53,5 @@ graph = (
     .compile(name="New Graph")
 )
 
-final_state = app.invoke({"question": "What is LangGraph?"})
+final_state = graph.invoke({"question": "What is LangGraph?"})
 print(final_state["changeme"])
