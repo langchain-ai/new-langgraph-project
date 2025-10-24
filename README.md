@@ -20,13 +20,17 @@ The grading process is broken down into a series of agents, each with a specific
 
 ## Getting Started
 
-### Prerequisites
+This guide will help you set up and run the project on your local machine or on an AWS EC2 instance.
 
-- Python 3.8+
+### Local Setup
+
+#### Prerequisites
+
+- Python 3.10+
 - Pip for package management
 - `gcc` for compiling C code
 
-### Installation
+#### Installation
 
 1.  **Clone the repository:**
     ```bash
@@ -55,6 +59,55 @@ The grading process is broken down into a series of agents, each with a specific
       API_KEY="YOUR_API_KEY_HERE"
       ```
 
+### Cloud Setup (EC2 Ubuntu)
+
+#### 1. Set Up an EC2 Instance
+
+1.  **Launch an EC2 Instance**:
+    *   Choose an **Ubuntu** Amazon Machine Image (AMI).
+    *   Select an instance type (e.g., `t2.micro` or `t3.small`).
+    *   Configure a security group to allow SSH access (port 22).
+    *   Launch the instance and save your private key file (`.pem`).
+
+2.  **Connect to your instance**:
+    ```bash
+    ssh -i /path/to/your-key.pem ubuntu@<your-ec2-instance-public-ip>
+    ```
+
+#### 2. Install Prerequisites
+
+Once connected to your EC2 instance, install Python, pip, git, and gcc.
+```bash
+sudo apt-get update
+sudo apt-get install -y python3.10 python3.10-venv python3-pip git gcc
+```
+
+#### 3. Set Up the Project
+
+1.  **Clone the repository**:
+    ```bash
+    git clone <repository-url>
+    cd MagGradeAI
+    ```
+
+2.  **Create a virtual environment**:
+    ```bash
+    python3 -m venv .venv
+    source .venv/bin/activate
+    ```
+
+3.  **Install dependencies**:
+    ```bash
+    make install
+    ```
+
+4.  **Configure API Keys**:
+    ```bash
+    cp .env.example .env
+    nano .env
+    ```
+    Add your API key to the `.env` file.
+
 ### Usage
 
 To grade a submission, you will need to:
@@ -62,6 +115,13 @@ To grade a submission, you will need to:
 1.  Place the student's code in a directory.
 2.  Define a rubric YAML file in the `rubrics/` directory for the assignment.
 3.  Update the main application entry point to start the grading process with the path to the submission and the rubric.
+
+## Development Environment
+
+For the Magshimim development team, the EC2 instance is configured as follows:
+
+-   **Server Address**: `ubuntu@35.164.240.64`
+-   **Virtual Environment Activation**: `source /home/ubuntu/MagGradeAI/MagGradeAIEnv/bin/activate`
 
 ## Customization
 
