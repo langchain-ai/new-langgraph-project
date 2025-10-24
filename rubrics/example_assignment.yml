@@ -1,0 +1,42 @@
+# This is an example rubric file in YAML format.
+# It defines the structure for an assignment, including checks and points.
+
+assignment_name: "Exercise 1: Basic C Program"
+
+# Total points for the assignment
+total_points: 100
+
+# Define the checks to be performed by the agents.
+checks:
+  # The 'compilation' check is run by the CompilerRunner agent.
+  compilation:
+    points: 20
+    # You can add specific flags or settings for the compiler here.
+    # For example: c_flags: "-Wall -Wextra -std=c11"
+
+  # The 'static_analysis' check is run by the StaticAnalyzer agent.
+  static_analysis:
+    points: 20
+    # Define specific style rules to enforce.
+    # The StaticAnalyzer agent will look for these rules in its analysis.
+    rules:
+      - "variable_naming_convention_snake_case"
+      - "function_naming_convention_camelCase"
+      - "no_global_variables"
+      - "declarations_at_top"
+
+  # The 'unit_tests' check is run by the UnitTester agent.
+  unit_tests:
+    points: 60
+    # Define a list of test cases to run.
+    # Each test case has an input and an expected output.
+    test_cases:
+      - name: "Test Case 1: Basic Input"
+        input: "World"
+        expected_output: "Hello, World!"
+      - name: "Test Case 2: Empty Input"
+        input: ""
+        expected_output: "Hello, !"
+      - name: "Test Case 3: Input with numbers"
+        input: "123"
+        expected_output: "Hello, 123!"

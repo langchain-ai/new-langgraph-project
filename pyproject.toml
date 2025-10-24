@@ -3,7 +3,7 @@ name = "agent"
 version = "0.0.1"
 description = "Starter template for making a new agent LangGraph."
 authors = [
-    { name = "William Fu-Hinthorn", email = "13333726+hinthornw@users.noreply.github.com" },
+    { name = "Roi Menahem", email = "roime@cyber.org.il" },
 ]
 readme = "README.md"
 license = { text = "MIT" }

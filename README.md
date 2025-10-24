@@ -1,61 +1,78 @@
-# New LangGraph Project
+# MagGradeAI - Automated C Code Grader
 
-[![CI](https://github.com/langchain-ai/new-langgraph-project/actions/workflows/unit-tests.yml/badge.svg)](https://github.com/langchain-ai/new-langgraph-project/actions/workflows/unit-tests.yml)
-[![Integration Tests](https://github.com/langchain-ai/new-langgraph-project/actions/workflows/integration-tests.yml/badge.svg)](https://github.com/langchain-ai/new-langgraph-project/actions/workflows/integration-tests.yml)
+Welcome to MagGradeAI, a flexible and extensible framework for automatically grading C programming assignments.
 
-This template demonstrates a simple application implemented using [LangGraph](https://github.com/langchain-ai/langgraph), designed for showing how to get started with [LangGraph Server](https://langchain-ai.github.io/langgraph/concepts/langgraph_server/#langgraph-server) and using [LangGraph Studio](https://langchain-ai.github.io/langgraph/concepts/langgraph_studio/), a visual debugging IDE.
+This project uses a multi-agent system, powered by LangGraph, to create a pipeline that analyzes, compiles, tests, and scores student submissions based on a customizable rubric.
 
-<div align="center">
-  <img src="./static/studio_ui.png" alt="Graph view in LangGraph studio UI" width="75%" />
-</div>
+## Architecture
 
-The core logic defined in `src/agent/graph.py`, showcases an single-step application that responds with a fixed string and the configuration provided.
+The grading process is broken down into a series of agents, each with a specific responsibility. These agents operate sequentially, passing a shared state object that accumulates findings.
 
-You can extend this graph to orchestrate more complex agentic workflows that can be visualized and debugged in LangGraph Studio.
+1.  **Orchestrator**: The entry point of the grading process. It reads the assignment rubric and determines which checks need to be run.
+
+2.  **Static Analyzer**: Performs static analysis on the student's code to check for style, conventions, and potential issues without executing the code.
+
+3.  **Compiler Runner**: Compiles the student's C code using `gcc`. It reports any compilation errors or warnings.
+
+4.  **Unit Tester**: Executes the compiled program against a set of predefined test cases from the rubric, comparing the actual output to the expected output.
+
+5.  **Rubric Scorer**: The final agent in the pipeline. It aggregates the findings from all previous agents and maps them to the rubric to calculate a final score and generate feedback in Hebrew.
 
 ## Getting Started
 
-1. Install dependencies, along with the [LangGraph CLI](https://langchain-ai.github.io/langgraph/concepts/langgraph_cli/), which will be used to run the server.
+### Prerequisites
 
-```bash
-cd path/to/your/app
-pip install -e . "langgraph-cli[inmem]"
-```
+- Python 3.8+
+- Pip for package management
+- `gcc` for compiling C code
 
-2. (Optional) Customize the code and project as needed. Create a `.env` file if you need to use secrets.
+### Installation
 
-```bash
-cp .env.example .env
-```
+1.  **Clone the repository:**
+    ```bash
+    git clone <repository-url>
+    ```
 
-If you want to enable LangSmith tracing, add your LangSmith API key to the `.env` file.
+2.  **Set up the environment:**
+    - Create a virtual environment:
+      ```bash
+      python -m venv .venv
+      source .venv/bin/activate
+      ```
+    - Install the required dependencies:
+      ```bash
+      make install
+      ```
 
-```text
-# .env
-LANGSMITH_API_KEY=lsv2...
-```
+3.  **Configure API Keys:**
+    - Copy the example environment file:
+      ```bash
+      cp .env.example .env
+      ```
+    - Add your API keys (e.g., for a large language model) to the `.env` file:
+      ```
+      # .env
+      API_KEY="YOUR_API_KEY_HERE"
+      ```
 
-3. Start the LangGraph Server.
+### Usage
 
-```shell
-langgraph dev --config ./langgraph.json --host 0.0.0.0 --port 8090 --tunnel
-```
+To grade a submission, you will need to:
 
-For more information on getting started with LangGraph Server, [see here](https://langchain-ai.github.io/langgraph/tutorials/langgraph-platform/local-server/).
+1.  Place the student's code in a directory.
+2.  Define a rubric YAML file in the `rubrics/` directory for the assignment.
+3.  Update the main application entry point to start the grading process with the path to the submission and the rubric.
 
-## How to customize
+## Customization
 
-1. **Define runtime context**: Modify the `Context` class in the `graph.py` file to expose the arguments you want to configure per assistant. For example, in a chatbot application you may want to define a dynamic system prompt or LLM to use. For more information on runtime context in LangGraph, [see here](https://langchain-ai.github.io/langgraph/agents/context/?h=context#static-runtime-context).
+### Rubrics
 
-2. **Extend the graph**: The core logic of the application is defined in [graph.py](./src/agent/graph.py). You can modify this file to add new nodes, edges, or change the flow of information.
+Rubrics are defined in YAML files within the `rubrics/` directory. See `rubrics/example_assignment.yml` for a template. You can define compilation flags, static analysis rules, and unit test cases.
 
-## Development
+### Agents
 
-While iterating on your graph in LangGraph Studio, you can edit past state and rerun your app from previous states to debug specific nodes. Local changes will be automatically applied via hot reload.
+Each agent is a Python class in the `src/agents/` directory. You can modify the logic of each agent to use different tools or perform custom checks.
 
-Follow-up requests extend the same thread. You can create an entirely new thread, clearing previous history, using the `+` button in the top right.
+### Tools
 
-For more advanced features and examples, refer to the [LangGraph documentation](https://langchain-ai.github.io/langgraph/). These resources can help you adapt this template for your specific use case and build more sophisticated conversational agents.
-
-LangGraph Studio also integrates with [LangSmith](https://smith.langchain.com/) for more in-depth tracing and collaboration with teammates, allowing you to analyze and optimize your chatbot's performance.
-
+Python functions that agents can use (e.g., for running shell commands) are located in the `src/tools/` directory. You can add new tools to extend the capabilities of your agents.
