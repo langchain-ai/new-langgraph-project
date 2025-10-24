@@ -3,6 +3,8 @@ import os
 import openai
 
 from dotenv import load_dotenv
+from langsmith import traceable
+
 from src.core.shared_state import SharedState
 
 load_dotenv()
@@ -20,6 +22,7 @@ class Orchestrator:
             raise ValueError("OPENAI_API_KEY environment variable not set.")
         self.client = openai.OpenAI(api_key=api_key)
 
+    @traceable
     def run(self, state: SharedState) -> SharedState:
         """
         The main entry point for the orchestrator.

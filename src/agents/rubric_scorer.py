@@ -3,6 +3,7 @@ from src.core.shared_state import SharedState
 import os
 import openai
 from dotenv import load_dotenv
+from langsmith import traceable
 
 load_dotenv()
 
@@ -19,6 +20,7 @@ class RubricScorer:
             raise ValueError("OPENAI_API_KEY environment variable not set.")
         self.client = openai.OpenAI(api_key=api_key)
 
+    @traceable
     def run(self, state: SharedState) -> SharedState:
         """
         Scores the submission based on the findings and the rubric.

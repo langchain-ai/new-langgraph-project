@@ -1,11 +1,13 @@
 
 from src.core.shared_state import SharedState
+from langsmith import traceable
 
 class CompilerRunner:
     """
     The CompilerRunner agent compiles the student's C code using gcc.
     """
 
+    @traceable
     def run(self, state: SharedState) -> SharedState:
         """
         Compiles the student's C code.

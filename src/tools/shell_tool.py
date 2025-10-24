@@ -1,5 +1,7 @@
 import subprocess
+from langsmith import traceable
 
+@traceable
 def run_shell_command(command: str) -> str:
     """
     Runs a shell command and returns the output.

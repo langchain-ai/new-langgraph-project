@@ -1,5 +1,6 @@
 
 from src.core.shared_state import SharedState
+from langsmith import traceable
 
 class UnitTester:
     """
@@ -7,6 +8,7 @@ class UnitTester:
     and validates the outputs against expected results defined in the rubric.
     """
 
+    @traceable
     def run(self, state: SharedState) -> SharedState:
         """
         Runs unit tests on the compiled student program.
