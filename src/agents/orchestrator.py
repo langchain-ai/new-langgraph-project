@@ -1,11 +1,24 @@
 
+import os
+import openai
+
+from dotenv import load_dotenv
 from src.core.shared_state import SharedState
+
+load_dotenv()
 
 class Orchestrator:
     """
     The Orchestrator agent reads the grading task and the rubric,
     and then decides which checks (other agents) need to be run.
     """
+
+    def __init__(self):
+        """Initializes the Orchestrator agent, setting up the OpenAI client."""
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY environment variable not set.")
+        self.client = openai.OpenAI(api_key=api_key)
 
     def run(self, state: SharedState) -> SharedState:
         """
@@ -21,11 +34,16 @@ class Orchestrator:
         
         # Placeholder: Load the rubric YAML file based on the path in the state.
         # This would involve reading the file and parsing it.
-        # For now, we'll assume the rubric is pre-loaded for this example.
         
-        # Placeholder: Based on the rubric, decide the sequence of agents to run.
-        # For example, if the rubric contains a "static_analysis" section,
-        # the StaticAnalyzer agent should be called.
+        # Placeholder: Use the OpenAI client to interpret the rubric and decide the agent sequence.
+        # For example:
+        # response = self.client.chat.completions.create(
+        #     model="gpt-4",
+        #     messages=[
+        #         {"role": "system", "content": "You are a helpful assistant that plans grading tasks."},
+        #         {"role": "user", "content": f"Based on this rubric, what checks should I run?: {state.get('rubric')}"}
+        #     ]
+        # )
         
         print("Orchestrator: Decision made. Proceeding to the first check.")
         

@@ -1,11 +1,23 @@
 
 from src.core.shared_state import SharedState
+import os
+import openai
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class RubricScorer:
     """
     The RubricScorer agent maps all the findings from the previous agents
     to the Hebrew rubric, calculating points and generating comments.
     """
+
+    def __init__(self):
+        """Initializes the RubricScorer agent, setting up the OpenAI client."""
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY environment variable not set.")
+        self.client = openai.OpenAI(api_key=api_key)
 
     def run(self, state: SharedState) -> SharedState:
         """
@@ -21,14 +33,17 @@ class RubricScorer:
         findings = state.get("findings", {})
         rubric = state.get("rubric", {})
         
-        # Placeholder: This is where the core logic of scoring happens.
-        # You would iterate through the rubric sections and check the
-        # corresponding findings to assign points and comments.
-        
-        # Example Logic:
-        # compilation_points = 0
-        # if findings.get("compilation") == "Placeholder: Compilation successful.":
-        #     compilation_points = rubric.get("compilation", {}).get("points", 0)
+        # Placeholder: Use the OpenAI client to generate Hebrew comments based on findings.
+        # For example, for a failed test:
+        # feedback_prompt = f"The student's code failed a test. The finding was: {findings.get('unit_tests')}. Please generate a short, encouraging feedback comment in Hebrew."
+        # response = self.client.chat.completions.create(
+        #     model="gpt-4",
+        #     messages=[
+        #         {"role": "system", "content": "You are a helpful teaching assistant providing feedback in Hebrew."},
+        #         {"role": "user", "content": feedback_prompt}
+        #     ]
+        # )
+        # hebrew_comment = response.choices[0].message.content
 
         # The final result should be structured according to the GradingResult TypedDict.
         final_grade = {
