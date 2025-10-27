@@ -8,7 +8,7 @@ from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 from deepagents import SubAgentMiddleware
 from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
 
-from .gcs_middleware import GCSFilesystemMiddleware
+from agent.gcs_middleware import GCSFilesystemMiddleware
 
 # Model Configuration
 MODEL_NAME = "claude-sonnet-4-20250514"
