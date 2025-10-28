@@ -8,7 +8,7 @@ from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 from deepagents import SubAgentMiddleware
 from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
 
-from agent.gcs_middleware import GCSFilesystemMiddleware
+from src.agent.gcs_middleware import GCSFilesystemMiddleware
 
 # Model Configuration
 MODEL_NAME = "claude-sonnet-4-20250514"
@@ -63,7 +63,7 @@ deepagent_middleware = [
     HumanInTheLoopMiddleware(interrupt_on=WRITE_OPERATIONS_APPROVAL),
 ]
 
-graph = create_agent(
+agent = create_agent(
     model=MODEL_NAME,
     tools=gcs_middleware.tools,
     middleware=deepagent_middleware,
