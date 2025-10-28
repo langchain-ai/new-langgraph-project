@@ -1,8 +1,8 @@
 """New LangGraph Agent.
 
-This module defines a custom graph.
+This module defines a custom agent.
 """
 
-from agent.graph import graph
+from .main import agent
 
-__all__ = ["main.py"]
+__all__ = ["agent"]

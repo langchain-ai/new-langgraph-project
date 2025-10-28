@@ -8,7 +8,7 @@ from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 from deepagents import SubAgentMiddleware
 from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
 
-from src.agent.gcs_middleware import GCSFilesystemMiddleware
+from src.agent.middlewares.GCS_FileSystem import GCSFilesystemMiddleware
 
 # Model Configuration
 MODEL_NAME = "claude-sonnet-4-20250514"
@@ -65,7 +65,6 @@ deepagent_middleware = [
 
 agent = create_agent(
     model=MODEL_NAME,
-    tools=gcs_middleware.tools,
     middleware=deepagent_middleware,
     system_prompt=f"{RESEARCH_INSTRUCTIONS}\n\n{BASE_AGENT_PROMPT}",
 ).with_config({"recursion_limit": RECURSION_LIMIT})

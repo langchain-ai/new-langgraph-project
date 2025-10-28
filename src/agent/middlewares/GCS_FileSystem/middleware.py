@@ -1,6 +1,6 @@
+import os
 from collections.abc import Awaitable, Callable
 from typing import Any, Optional
-import os
 
 from langchain.agents.middleware.types import (
     AgentMiddleware,
@@ -13,38 +13,11 @@ from langchain_core.messages import ToolMessage
 from langgraph.runtime import Runtime
 from langgraph.types import Command
 
-from agent.gcs_tools import (
-    GCS_TOOL_GENERATORS,
-    _create_file_data,
-    _file_data_to_gcs,
-    _format_content_with_line_numbers,
-    _get_gcs_client,
-    _upload_blob_with_retry,
-)
-
-
-CHARS_TO_TOKENS_RATIO = 4
-
-GCS_SYSTEM_PROMPT = """## GCS Filesystem Tools `ls`, `read_file`, `write_file`, `edit_file`
-
-You have access to a Google Cloud Storage filesystem which you can interact with using these tools.
-All file paths must start with a /.
-
-- ls: list all files in GCS
-- read_file: read a file from GCS
-- write_file: write to a file in GCS
-- edit_file: edit a file in GCS
-
-All files are stored persistently in Google Cloud Storage and will be available across conversations."""
-
-TOO_LARGE_TOOL_MSG = """Tool result too large, the result of this tool call {tool_call_id} was saved in GCS at this path: {file_path}
-You can read the result from GCS by using the read_file tool, but make sure to only read part of the result at a time.
-You can do this by specifying an offset and limit in the read_file tool call.
-For example, to read the first 100 lines, you can use the read_file tool with offset=0 and limit=100.
-
-Here are the first 10 lines of the result:
-{content_sample}
-"""
+from .config import CHARS_TO_TOKENS_RATIO, GCS_SYSTEM_PROMPT, TOO_LARGE_TOOL_MSG
+from .core.client import get_gcs_client
+from .core.file_operations import create_file_data, file_data_to_gcs, upload_blob_with_retry
+from .tools import GCS_TOOL_GENERATORS
+from .utils.formatting import format_content_with_line_numbers
 
 
 class GCSFilesystemMiddleware(AgentMiddleware):
@@ -105,7 +78,7 @@ class GCSFilesystemMiddleware(AgentMiddleware):
             return
 
         try:
-            client = _get_gcs_client()
+            client = get_gcs_client()
             bucket = client.bucket(self.bucket_name)
             bucket.reload(timeout=5)
             self._bucket_validated = True
@@ -169,20 +142,20 @@ class GCSFilesystemMiddleware(AgentMiddleware):
             ):
                 file_path = f"/large_tool_results/{tool_result.tool_call_id}"
 
-                client = _get_gcs_client()
+                client = get_gcs_client()
                 bucket = client.bucket(self.bucket_name)
                 blob = bucket.blob(file_path.lstrip("/"))
 
-                file_data = _create_file_data(content)
-                content_str, metadata = _file_data_to_gcs(file_data)
+                file_data = create_file_data(content)
+                content_str, metadata = file_data_to_gcs(file_data)
 
-                _upload_blob_with_retry(blob, content_str, metadata)
+                upload_blob_with_retry(blob, content_str, metadata)
 
                 return ToolMessage(
                     TOO_LARGE_TOOL_MSG.format(
                         tool_call_id=tool_result.tool_call_id,
                         file_path=file_path,
-                        content_sample=_format_content_with_line_numbers(
+                        content_sample=format_content_with_line_numbers(
                             file_data["content"][:10], start_line=1
                         ),
                     ),
