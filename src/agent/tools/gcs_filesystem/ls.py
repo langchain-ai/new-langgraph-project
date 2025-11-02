@@ -2,9 +2,9 @@ from typing import Optional
 
 from langchain_core.tools import BaseTool, tool
 
-from ..config import GCS_RETRY, LS_TOOL_DESCRIPTION
-from ..core.client import get_gcs_client
-from ..utils.validation import validate_path
+from .config import GCS_RETRY, LS_TOOL_DESCRIPTION
+from src.agent.tools.shared.gcs.client import get_gcs_client
+from src.agent.tools.shared.gcs.validation import validate_path
 
 
 def gcs_ls_tool_generator(

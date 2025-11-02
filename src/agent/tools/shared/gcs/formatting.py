@@ -1,6 +1,9 @@
 from typing import Optional
 
-from ..config import EMPTY_CONTENT_WARNING, LINE_NUMBER_WIDTH, MAX_LINE_LENGTH
+# Constants for formatting
+MAX_LINE_LENGTH = 2000
+LINE_NUMBER_WIDTH = 6
+EMPTY_CONTENT_WARNING = "System reminder: File exists but has empty contents"
 
 
 def format_content_with_line_numbers(

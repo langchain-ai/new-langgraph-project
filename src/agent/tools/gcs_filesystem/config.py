@@ -13,6 +13,8 @@ DEFAULT_READ_LIMIT = 2000
 EMPTY_CONTENT_WARNING = "System reminder: File exists but has empty contents"
 CHARS_TO_TOKENS_RATIO = 4
 
+GCS_ROOT_PATH_CONFIG_KEY = "gcs_root_path"
+
 GCS_RETRY = retry.Retry(
     initial=0.1,
     maximum=60.0,
@@ -35,7 +37,10 @@ All file paths must start with a /.
 - write_file: write to a file in GCS
 - edit_file: edit a file in GCS
 
-All files are stored persistently in Google Cloud Storage and will be available across conversations."""
+All files are stored persistently in Google Cloud Storage and will be available across conversations.
+
+IMPORTANT: Your file access is restricted to the current company/workspace scope for security and multi-tenancy isolation.
+You can only access files within your assigned workspace boundary."""
 
 TOO_LARGE_TOOL_MSG = """Tool result too large, the result of this tool call {tool_call_id} was saved in GCS at this path: {file_path}
 You can read the result from GCS by using the read_file tool, but make sure to only read part of the result at a time.

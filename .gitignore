@@ -1,3 +1,6 @@
+# DS Store
+.DS_Store
+
 # GCP Access
 gcs_keys.json
 

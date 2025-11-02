@@ -2,16 +2,16 @@ from typing import Optional
 
 from langchain_core.tools import BaseTool, tool
 
-from ..config import EDIT_FILE_TOOL_DESCRIPTION, GCS_RETRY
-from ..core.client import get_gcs_client
-from ..core.file_operations import (
+from .config import EDIT_FILE_TOOL_DESCRIPTION, GCS_RETRY
+from src.agent.tools.shared.gcs.client import get_gcs_client
+from src.agent.tools.shared.gcs.file_operations import (
     file_data_to_gcs,
     file_data_to_string,
     gcs_blob_to_file_data,
     update_file_data,
     upload_blob_with_optimistic_locking,
 )
-from ..utils.validation import validate_path
+from src.agent.tools.shared.gcs.validation import validate_path
 
 
 def gcs_edit_file_tool_generator(

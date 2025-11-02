@@ -2,10 +2,10 @@ from typing import Optional
 
 from langchain_core.tools import BaseTool, tool
 
-from ..config import GCS_RETRY, WRITE_FILE_TOOL_DESCRIPTION
-from ..core.client import get_gcs_client
-from ..core.file_operations import create_file_data, file_data_to_gcs, upload_blob_with_retry
-from ..utils.validation import validate_path
+from .config import GCS_RETRY, WRITE_FILE_TOOL_DESCRIPTION
+from src.agent.tools.shared.gcs.client import get_gcs_client
+from src.agent.tools.shared.gcs.file_operations import create_file_data, file_data_to_gcs, upload_blob_with_retry
+from src.agent.tools.shared.gcs.validation import validate_path
 
 
 def gcs_write_file_tool_generator(

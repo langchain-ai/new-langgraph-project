@@ -8,7 +8,7 @@ from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 from deepagents import SubAgentMiddleware
 from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
 
-from src.agent.middlewares.GCS_FileSystem import GCSFilesystemMiddleware
+from src.agent.sub_agents import SUBAGENTS
 
 # Model Configuration
 MODEL_NAME = "claude-sonnet-4-20250514"
@@ -22,9 +22,6 @@ RESEARCH_INSTRUCTIONS = """
 You are an expert financial advisor for a company data. You take company problems and deliver clear answers.
 """
 
-# GCS middleware (reads GCS_BUCKET_NAME and GOOGLE_CLOUD_CREDENTIALS_JSON from env)
-gcs_middleware = GCSFilesystemMiddleware()
-
 # Human approval required for write operations
 WRITE_OPERATIONS_APPROVAL = {
     "write_file": True,
@@ -34,14 +31,12 @@ WRITE_OPERATIONS_APPROVAL = {
 # Middleware configuration matching create_deep_agent
 deepagent_middleware = [
     TodoListMiddleware(),
-    gcs_middleware,
     SubAgentMiddleware(
         default_model=MODEL_NAME,
-        default_tools=gcs_middleware.tools,
-        subagents=[],
+        default_tools=[],  # No default tools - tools are in sub-agents
+        subagents=SUBAGENTS,  # Include all registered sub-agents
         default_middleware=[
             TodoListMiddleware(),
-            gcs_middleware,
             SummarizationMiddleware(
                 model=MODEL_NAME,
                 max_tokens_before_summary=MAX_TOKENS_BEFORE_SUMMARY,

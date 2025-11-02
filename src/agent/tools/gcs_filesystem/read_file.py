@@ -2,11 +2,11 @@ from typing import Optional
 
 from langchain_core.tools import BaseTool, tool
 
-from ..config import DEFAULT_READ_LIMIT, DEFAULT_READ_OFFSET, GCS_RETRY, READ_FILE_TOOL_DESCRIPTION
-from ..core.client import get_gcs_client
-from ..core.file_operations import file_data_to_string, gcs_blob_to_file_data
-from ..utils.formatting import check_empty_content, format_content_with_line_numbers
-from ..utils.validation import validate_path
+from .config import DEFAULT_READ_LIMIT, DEFAULT_READ_OFFSET, GCS_RETRY, READ_FILE_TOOL_DESCRIPTION
+from src.agent.tools.shared.gcs.client import get_gcs_client
+from src.agent.tools.shared.gcs.file_operations import file_data_to_string, gcs_blob_to_file_data
+from src.agent.tools.shared.gcs.formatting import check_empty_content, format_content_with_line_numbers
+from src.agent.tools.shared.gcs.validation import validate_path
 
 
 def gcs_read_file_tool_generator(

@@ -3,10 +3,16 @@ from datetime import UTC, datetime
 from typing import Optional
 
 from google.api_core.exceptions import PreconditionFailed
+from tenacity import retry, stop_after_attempt, wait_exponential
 
-from ..config import GCS_RETRY
-from ..utils.formatting import split_content_into_lines
+from .formatting import split_content_into_lines
 from .models import FileData
+
+# Define GCS_RETRY decorator here since it's needed by multiple modules
+GCS_RETRY = retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+)
 
 
 def create_file_data(content: str | list[str], created_at: Optional[str] = None) -> FileData:
