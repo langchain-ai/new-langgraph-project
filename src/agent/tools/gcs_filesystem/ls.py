@@ -1,35 +1,22 @@
-from typing import Optional
-
-from langchain_core.tools import BaseTool, tool
+from langchain_core.tools import tool
 
 from .config import GCS_RETRY, LS_TOOL_DESCRIPTION
-from .tool_utils import ensure_runtime_root_path
-from src.agent.tools.shared.gcs.client import get_gcs_client
+from .tool_utils import normalize_gcs_blob_path, setup_gcs_bucket
 from src.agent.tools.shared.gcs.validation import validate_path
 
 
-def gcs_ls_tool_generator(
-    bucket_name: str,
-    custom_description: Optional[str] = None
-) -> BaseTool:
-    """Generate the GCS ls (list files) tool.
-
-    The tool reads gcs_root_path from runtime configuration passed by frontend.
-    """
+def gcs_ls_tool_generator(bucket_name, custom_description=None):
+    """Generate GCS ls tool."""
     description = custom_description or LS_TOOL_DESCRIPTION
 
     @tool(description=description)
-    def ls(path: Optional[str] = None, max_results: int = 1000) -> list[str]:
-        # Ensure runtime root path is set
-        ensure_runtime_root_path()
-
-        client = get_gcs_client()
-        bucket = client.bucket(bucket_name)
+    def ls(path=None, max_results=1000):
+        bucket = setup_gcs_bucket(bucket_name)
 
         prefix = ""
         if path:
             normalized = validate_path(path)
-            prefix = normalized.lstrip("/")
+            prefix = normalize_gcs_blob_path(normalized)
             if prefix and not prefix.endswith("/"):
                 prefix += "/"
 

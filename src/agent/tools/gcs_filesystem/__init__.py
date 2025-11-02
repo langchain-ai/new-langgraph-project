@@ -15,20 +15,8 @@ GCS_TOOL_GENERATORS = {
     "edit_file": gcs_edit_file_tool_generator,
 }
 
-def get_gcs_tools(bucket_name: str, custom_descriptions: dict = None):
-    """Generate all GCS tools with the given configuration.
-
-    Args:
-        bucket_name: GCS bucket name
-        custom_descriptions: Optional custom tool descriptions
-
-    Returns:
-        List of configured GCS tools
-
-    Note:
-        The gcs_root_path is read from runtime config.configurable
-        passed by the frontend with each request.
-    """
+def get_gcs_tools(bucket_name, custom_descriptions=None):
+    """Generate all GCS tools with the given configuration."""
     custom_descriptions = custom_descriptions or {}
     tools = []
     for tool_name, generator in GCS_TOOL_GENERATORS.items():

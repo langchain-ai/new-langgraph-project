@@ -1,38 +1,21 @@
-from typing import Optional
-
-from langchain_core.tools import BaseTool, tool
+from langchain_core.tools import tool
 
 from .config import DEFAULT_READ_LIMIT, DEFAULT_READ_OFFSET, GCS_RETRY, READ_FILE_TOOL_DESCRIPTION
-from .tool_utils import ensure_runtime_root_path
-from src.agent.tools.shared.gcs.client import get_gcs_client
+from .tool_utils import normalize_gcs_blob_path, setup_gcs_bucket
 from src.agent.tools.shared.gcs.file_operations import file_data_to_string, gcs_blob_to_file_data
 from src.agent.tools.shared.gcs.formatting import check_empty_content, format_content_with_line_numbers
 from src.agent.tools.shared.gcs.validation import validate_path
 
 
-def gcs_read_file_tool_generator(
-    bucket_name: str,
-    custom_description: Optional[str] = None
-) -> BaseTool:
-    """Generate the GCS read_file tool.
-
-    The tool reads gcs_root_path from runtime configuration passed by frontend.
-    """
+def gcs_read_file_tool_generator(bucket_name, custom_description=None):
+    """Generate GCS read_file tool."""
     description = custom_description or READ_FILE_TOOL_DESCRIPTION
 
     @tool(description=description)
-    def read_file(
-        file_path: str,
-        offset: int = DEFAULT_READ_OFFSET,
-        limit: int = DEFAULT_READ_LIMIT,
-    ) -> str:
-        # Ensure runtime root path is set
-        ensure_runtime_root_path()
-
+    def read_file(file_path, offset=DEFAULT_READ_OFFSET, limit=DEFAULT_READ_LIMIT):
+        bucket = setup_gcs_bucket(bucket_name)
         file_path = validate_path(file_path)
-        client = get_gcs_client()
-        bucket = client.bucket(bucket_name)
-        blob = bucket.blob(file_path.lstrip("/"))
+        blob = bucket.blob(normalize_gcs_blob_path(file_path))
 
         @GCS_RETRY
         def _check_exists():

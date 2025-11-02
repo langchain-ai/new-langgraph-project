@@ -40,9 +40,9 @@ tools = get_gcs_tools(bucket_name="my-bucket")
 ### How It Works
 
 1. **Frontend sends request** with `gcs_root_path` in `config.configurable`
-2. **GCSRuntimeMiddleware** extracts and validates the root path
-3. **Context variables** make the path available to tools
-4. **Tools read** the root path from context when executed
+2. **GCSRuntimeMiddleware** extracts and validates the root path via `get_config()`
+3. **Middleware sets path** in context variable using `set_gcs_root_path()`
+4. **Tools read** the root path from context using `get_gcs_root_path()`
 5. **Workspace isolation** is enforced for all operations
 
 This approach ensures:
@@ -66,13 +66,13 @@ When used as a sub-agent, the GCS filesystem tools are automatically configured:
 from src.agent.sub_agents.gcs_filesystem import create_gcs_filesystem_subagent
 
 subagent = create_gcs_filesystem_subagent(
-    bucket_name="my-bucket",
-    root_path="/company-123/workspace-456/"
+    bucket_name="my-bucket"  # Root path comes from runtime config
 )
 ```
 
 The sub-agent handles:
 - Tool initialization
+- Runtime configuration extraction via middleware
 - Root path validation
 - Error handling
-- Context isolation
+- Context isolation per request

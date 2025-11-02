@@ -1,10 +1,7 @@
-from typing import Optional
-
-from langchain_core.tools import BaseTool, tool
+from langchain_core.tools import tool
 
 from .config import EDIT_FILE_TOOL_DESCRIPTION, GCS_RETRY
-from .tool_utils import ensure_runtime_root_path
-from src.agent.tools.shared.gcs.client import get_gcs_client
+from .tool_utils import normalize_gcs_blob_path, setup_gcs_bucket
 from src.agent.tools.shared.gcs.file_operations import (
     file_data_to_gcs,
     file_data_to_string,
@@ -15,27 +12,15 @@ from src.agent.tools.shared.gcs.file_operations import (
 from src.agent.tools.shared.gcs.validation import validate_path
 
 
-def gcs_edit_file_tool_generator(
-    bucket_name: str,
-    custom_description: Optional[str] = None
-) -> BaseTool:
-    """Generate the GCS edit_file tool."""
+def gcs_edit_file_tool_generator(bucket_name, custom_description=None):
+    """Generate GCS edit_file tool."""
     description = custom_description or EDIT_FILE_TOOL_DESCRIPTION
 
     @tool(description=description)
-    def edit_file(
-        file_path: str,
-        old_string: str,
-        new_string: str,
-        replace_all: bool = False,
-    ) -> str:
-        # Ensure runtime root path is set
-        ensure_runtime_root_path()
-
+    def edit_file(file_path, old_string, new_string, replace_all=False):
+        bucket = setup_gcs_bucket(bucket_name)
         file_path = validate_path(file_path)
-        client = get_gcs_client()
-        bucket = client.bucket(bucket_name)
-        blob = bucket.blob(file_path.lstrip("/"))
+        blob = bucket.blob(normalize_gcs_blob_path(file_path))
 
         @GCS_RETRY
         def _reload_blob():

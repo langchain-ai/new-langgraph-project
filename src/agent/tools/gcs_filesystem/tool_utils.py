@@ -1,27 +1,24 @@
 """Utility functions shared by GCS filesystem tools."""
 
-from .runtime_config import get_runtime_root_path
-from src.agent.tools.shared.gcs.validation import set_gcs_root_path
+from src.agent.tools.shared.gcs.validation import get_gcs_root_path
+from src.agent.tools.shared.gcs.client import get_gcs_client
 
 
-def ensure_runtime_root_path() -> str:
-    """Ensure runtime root path is set and return it.
+def ensure_runtime_root_path():
+    """Ensure runtime root path is set and return it."""
+    return get_gcs_root_path()
 
-    Returns:
-        The validated root path from runtime config
 
-    Raises:
-        ValueError: If root path is not found in runtime configuration
+def setup_gcs_bucket(bucket_name):
+    """Setup GCS bucket with runtime validation.
+
+    Ensures runtime root path is configured and returns bucket instance.
     """
-    runtime_root_path = get_runtime_root_path()
+    ensure_runtime_root_path()
+    client = get_gcs_client()
+    return client.bucket(bucket_name)
 
-    if not runtime_root_path:
-        raise ValueError(
-            "GCS root path not found in runtime configuration. "
-            "The frontend must pass 'gcs_root_path' in config.configurable."
-        )
 
-    # Set the root path for validation functions
-    set_gcs_root_path(runtime_root_path)
-
-    return runtime_root_path
+def normalize_gcs_blob_path(path):
+    """Normalize file path to GCS blob path by removing leading slash."""
+    return path.lstrip("/")

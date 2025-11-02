@@ -13,8 +13,6 @@ DEFAULT_READ_LIMIT = 2000
 EMPTY_CONTENT_WARNING = "System reminder: File exists but has empty contents"
 CHARS_TO_TOKENS_RATIO = 4
 
-GCS_ROOT_PATH_CONFIG_KEY = "gcs_root_path"
-
 GCS_RETRY = retry.Retry(
     initial=0.1,
     maximum=60.0,
