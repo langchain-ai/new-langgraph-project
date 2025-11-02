@@ -3,19 +3,26 @@ from typing import Optional
 from langchain_core.tools import BaseTool, tool
 
 from .config import GCS_RETRY, LS_TOOL_DESCRIPTION
+from .tool_utils import ensure_runtime_root_path
 from src.agent.tools.shared.gcs.client import get_gcs_client
 from src.agent.tools.shared.gcs.validation import validate_path
 
 
 def gcs_ls_tool_generator(
     bucket_name: str,
-    custom_description: Optional[str] = None,
+    custom_description: Optional[str] = None
 ) -> BaseTool:
-    """Generate the GCS ls (list files) tool."""
+    """Generate the GCS ls (list files) tool.
+
+    The tool reads gcs_root_path from runtime configuration passed by frontend.
+    """
     description = custom_description or LS_TOOL_DESCRIPTION
 
     @tool(description=description)
     def ls(path: Optional[str] = None, max_results: int = 1000) -> list[str]:
+        # Ensure runtime root path is set
+        ensure_runtime_root_path()
+
         client = get_gcs_client()
         bucket = client.bucket(bucket_name)
 

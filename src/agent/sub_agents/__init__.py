@@ -4,6 +4,6 @@ This module contains specialized sub-agents that can be invoked by the main agen
 for specific tasks. Each sub-agent has its own tools, prompts, and configuration.
 """
 
-from .registry import SUBAGENTS
+from .registry import SUBAGENTS, get_subagents
 
-__all__ = ["SUBAGENTS"]
+__all__ = ["SUBAGENTS", "get_subagents"]

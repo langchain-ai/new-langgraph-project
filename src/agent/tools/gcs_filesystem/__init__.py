@@ -24,6 +24,10 @@ def get_gcs_tools(bucket_name: str, custom_descriptions: dict = None):
 
     Returns:
         List of configured GCS tools
+
+    Note:
+        The gcs_root_path is read from runtime config.configurable
+        passed by the frontend with each request.
     """
     custom_descriptions = custom_descriptions or {}
     tools = []

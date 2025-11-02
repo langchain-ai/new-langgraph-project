@@ -3,6 +3,7 @@ from typing import Optional
 from langchain_core.tools import BaseTool, tool
 
 from .config import EDIT_FILE_TOOL_DESCRIPTION, GCS_RETRY
+from .tool_utils import ensure_runtime_root_path
 from src.agent.tools.shared.gcs.client import get_gcs_client
 from src.agent.tools.shared.gcs.file_operations import (
     file_data_to_gcs,
@@ -16,7 +17,7 @@ from src.agent.tools.shared.gcs.validation import validate_path
 
 def gcs_edit_file_tool_generator(
     bucket_name: str,
-    custom_description: Optional[str] = None,
+    custom_description: Optional[str] = None
 ) -> BaseTool:
     """Generate the GCS edit_file tool."""
     description = custom_description or EDIT_FILE_TOOL_DESCRIPTION
@@ -28,6 +29,9 @@ def gcs_edit_file_tool_generator(
         new_string: str,
         replace_all: bool = False,
     ) -> str:
+        # Ensure runtime root path is set
+        ensure_runtime_root_path()
+
         file_path = validate_path(file_path)
         client = get_gcs_client()
         bucket = client.bucket(bucket_name)

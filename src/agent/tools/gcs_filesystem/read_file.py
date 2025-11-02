@@ -3,6 +3,7 @@ from typing import Optional
 from langchain_core.tools import BaseTool, tool
 
 from .config import DEFAULT_READ_LIMIT, DEFAULT_READ_OFFSET, GCS_RETRY, READ_FILE_TOOL_DESCRIPTION
+from .tool_utils import ensure_runtime_root_path
 from src.agent.tools.shared.gcs.client import get_gcs_client
 from src.agent.tools.shared.gcs.file_operations import file_data_to_string, gcs_blob_to_file_data
 from src.agent.tools.shared.gcs.formatting import check_empty_content, format_content_with_line_numbers
@@ -11,9 +12,12 @@ from src.agent.tools.shared.gcs.validation import validate_path
 
 def gcs_read_file_tool_generator(
     bucket_name: str,
-    custom_description: Optional[str] = None,
+    custom_description: Optional[str] = None
 ) -> BaseTool:
-    """Generate the GCS read_file tool."""
+    """Generate the GCS read_file tool.
+
+    The tool reads gcs_root_path from runtime configuration passed by frontend.
+    """
     description = custom_description or READ_FILE_TOOL_DESCRIPTION
 
     @tool(description=description)
@@ -22,6 +26,9 @@ def gcs_read_file_tool_generator(
         offset: int = DEFAULT_READ_OFFSET,
         limit: int = DEFAULT_READ_LIMIT,
     ) -> str:
+        # Ensure runtime root path is set
+        ensure_runtime_root_path()
+
         file_path = validate_path(file_path)
         client = get_gcs_client()
         bucket = client.bucket(bucket_name)

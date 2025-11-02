@@ -8,7 +8,7 @@ from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 from deepagents import SubAgentMiddleware
 from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
 
-from src.agent.sub_agents import SUBAGENTS
+from src.agent.sub_agents import get_subagents
 
 # Model Configuration
 MODEL_NAME = "claude-sonnet-4-20250514"
@@ -34,7 +34,7 @@ deepagent_middleware = [
     SubAgentMiddleware(
         default_model=MODEL_NAME,
         default_tools=[],  # No default tools - tools are in sub-agents
-        subagents=SUBAGENTS,  # Include all registered sub-agents
+        subagents=get_subagents(),  # Include all registered sub-agents
         default_middleware=[
             TodoListMiddleware(),
             SummarizationMiddleware(
