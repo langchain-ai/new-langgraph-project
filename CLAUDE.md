@@ -51,6 +51,8 @@ langgraph dev
 
 ## Architecture
 
+> **📖 For comprehensive architecture documentation**, see [architecture.md](./architecture.md) for detailed diagrams, middleware flow patterns, state propagation mechanics, and the complete two-middleware architecture explanation.
+
 ### Multi-Layer Agent System
 
 **Main Agent** (`src/agent/main.py`):

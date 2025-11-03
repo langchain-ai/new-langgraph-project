@@ -6,8 +6,7 @@ from src.agent.tools.shared.gcs.validation import set_gcs_root_path
 
 
 class GCSRuntimeMiddleware(AgentMiddleware):
-    """
-    Middleware that extracts gcs_root_path from state for GCS tools.
+    """Middleware that extracts gcs_root_path from state for GCS tools.
 
     NOTE: Reads from state instead of config due to deepagents SubAgentMiddleware
     not propagating RunnableConfig to sub-agents. The main agent's ConfigToStateMiddleware
@@ -15,6 +14,7 @@ class GCSRuntimeMiddleware(AgentMiddleware):
     """
 
     def __init__(self):
+        """Initialize GCSRuntimeMiddleware with state key configuration."""
         self.state_key = "gcs_root_path"
 
     def before_agent(self, state, runtime):
@@ -40,3 +40,7 @@ class GCSRuntimeMiddleware(AgentMiddleware):
         set_gcs_root_path(root_path)
 
         return None
+
+    async def abefore_agent(self, state, runtime):
+        """Extract and validate gcs_root_path from state (async)."""
+        return self.before_agent(state, runtime)
