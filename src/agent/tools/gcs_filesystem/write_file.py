@@ -1,9 +1,15 @@
+from langchain.tools import ToolRuntime
 from langchain_core.tools import tool
 
-from .config import GCS_RETRY, WRITE_FILE_TOOL_DESCRIPTION
-from .tool_utils import normalize_gcs_blob_path, setup_gcs_bucket
-from src.agent.tools.shared.gcs.file_operations import create_file_data, file_data_to_gcs, upload_blob_with_retry
+from src.agent.tools.shared.gcs.file_operations import (
+    create_file_data,
+    file_data_to_gcs,
+    upload_blob_with_retry,
+)
 from src.agent.tools.shared.gcs.validation import validate_path
+
+from .config import GCS_RETRY, WRITE_FILE_TOOL_DESCRIPTION
+from .tool_utils import get_root_path_from_runtime, normalize_gcs_blob_path, setup_gcs_bucket
 
 
 def gcs_write_file_tool_generator(bucket_name, custom_description=None):
@@ -11,9 +17,10 @@ def gcs_write_file_tool_generator(bucket_name, custom_description=None):
     description = custom_description or WRITE_FILE_TOOL_DESCRIPTION
 
     @tool(description=description)
-    def write_file(file_path, content):
+    def write_file(file_path, content, runtime: ToolRuntime = None):
+        root_path = get_root_path_from_runtime(runtime)
         bucket = setup_gcs_bucket(bucket_name)
-        file_path = validate_path(file_path)
+        file_path = validate_path(file_path, root_path)
         blob = bucket.blob(normalize_gcs_blob_path(file_path))
 
         @GCS_RETRY

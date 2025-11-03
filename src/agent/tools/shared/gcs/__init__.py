@@ -30,9 +30,8 @@ from .models import FileData
 
 # Validation utilities
 from .validation import (
-    get_gcs_root_path,
-    set_gcs_root_path,
     validate_path,
+    validate_root_path,
 )
 
 __all__ = [
@@ -53,7 +52,6 @@ __all__ = [
     # Models
     "FileData",
     # Validation
-    "get_gcs_root_path",
-    "set_gcs_root_path",
     "validate_path",
+    "validate_root_path",
 ]

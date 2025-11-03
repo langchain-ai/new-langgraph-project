@@ -2,13 +2,22 @@
 
 import os
 
+from langchain.agents import create_agent
+
+from src.agent.config.models_config import get_subagent_model
+from src.agent.state import MainAgentState
 from src.agent.tools.gcs_filesystem import get_gcs_tools
-from .prompts import GCS_FILESYSTEM_SYSTEM_PROMPT
+
 from .middleware import GCSRuntimeMiddleware
+from .prompts import GCS_FILESYSTEM_SYSTEM_PROMPT
 
 
 def create_gcs_filesystem_subagent(bucket_name=None, custom_tool_descriptions=None, model=None):
-    """Create GCS filesystem sub-agent configuration."""
+    """Create GCS filesystem sub-agent as CompiledSubAgent with custom state schema.
+
+    Returns a dict with 'name', 'description', and 'runnable' (CompiledSubAgent format).
+    The runnable is a compiled graph with MainAgentState schema to receive gcs_root_path.
+    """
     # Get bucket name from env if not provided
     bucket_name = bucket_name or os.getenv("GCS_BUCKET_NAME")
     if not bucket_name:
@@ -16,27 +25,35 @@ def create_gcs_filesystem_subagent(bucket_name=None, custom_tool_descriptions=No
             "GCS bucket name not provided. Set GCS_BUCKET_NAME env var or pass bucket_name parameter."
         )
 
+    # Get model from config if not provided
+    if model is None:
+        model = get_subagent_model("gcs-filesystem")
+    if model is None:
+        raise ValueError("Model must be specified for CompiledSubAgent")
+
     # Generate tools for this sub-agent
-    # Tools will read root_path from runtime context when executed
     tools = get_gcs_tools(bucket_name, custom_tool_descriptions)
 
-    config = {
+    # Create compiled graph with custom state schema
+    # This ensures gcs_root_path is included in the sub-agent's state
+    compiled_subagent = create_agent(
+        model=model,
+        tools=tools,
+        system_prompt=GCS_FILESYSTEM_SYSTEM_PROMPT,
+        middleware=[GCSRuntimeMiddleware()],
+        state_schema=MainAgentState,  # Include gcs_root_path in state
+    )
+
+    # Return CompiledSubAgent format (not SubAgent)
+    return {
         "name": "gcs-filesystem",
         "description": (
             "Specialized agent for GCS file operations. "
             "Use for: listing files, reading files, writing new files, editing existing files. "
             "Handles all Google Cloud Storage filesystem interactions."
         ),
-        "system_prompt": GCS_FILESYSTEM_SYSTEM_PROMPT,
-        "tools": tools,
-        "middleware": [GCSRuntimeMiddleware()],  # Middleware to extract runtime config
+        "runnable": compiled_subagent,
     }
-
-    # Only include model if explicitly provided (None means use parent model)
-    if model is not None:
-        config["model"] = model
-
-    return config
 
 
 def get_default_gcs_filesystem_subagent():

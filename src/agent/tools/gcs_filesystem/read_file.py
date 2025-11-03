@@ -1,10 +1,23 @@
+from langchain.tools import ToolRuntime
 from langchain_core.tools import tool
 
-from .config import DEFAULT_READ_LIMIT, DEFAULT_READ_OFFSET, GCS_RETRY, READ_FILE_TOOL_DESCRIPTION
-from .tool_utils import normalize_gcs_blob_path, setup_gcs_bucket
-from src.agent.tools.shared.gcs.file_operations import file_data_to_string, gcs_blob_to_file_data
-from src.agent.tools.shared.gcs.formatting import check_empty_content, format_content_with_line_numbers
+from src.agent.tools.shared.gcs.file_operations import (
+    file_data_to_string,
+    gcs_blob_to_file_data,
+)
+from src.agent.tools.shared.gcs.formatting import (
+    check_empty_content,
+    format_content_with_line_numbers,
+)
 from src.agent.tools.shared.gcs.validation import validate_path
+
+from .config import (
+    DEFAULT_READ_LIMIT,
+    DEFAULT_READ_OFFSET,
+    GCS_RETRY,
+    READ_FILE_TOOL_DESCRIPTION,
+)
+from .tool_utils import get_root_path_from_runtime, normalize_gcs_blob_path, setup_gcs_bucket
 
 
 def gcs_read_file_tool_generator(bucket_name, custom_description=None):
@@ -12,9 +25,10 @@ def gcs_read_file_tool_generator(bucket_name, custom_description=None):
     description = custom_description or READ_FILE_TOOL_DESCRIPTION
 
     @tool(description=description)
-    def read_file(file_path, offset=DEFAULT_READ_OFFSET, limit=DEFAULT_READ_LIMIT):
+    def read_file(file_path, offset=DEFAULT_READ_OFFSET, limit=DEFAULT_READ_LIMIT, runtime: ToolRuntime = None):
+        root_path = get_root_path_from_runtime(runtime)
         bucket = setup_gcs_bucket(bucket_name)
-        file_path = validate_path(file_path)
+        file_path = validate_path(file_path, root_path)
         blob = bucket.blob(normalize_gcs_blob_path(file_path))
 
         @GCS_RETRY

@@ -1,6 +1,5 @@
 import time
 from datetime import UTC, datetime
-from typing import Optional
 
 from google.api_core.exceptions import PreconditionFailed
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -15,7 +14,7 @@ GCS_RETRY = retry(
 )
 
 
-def create_file_data(content: str | list[str], created_at: Optional[str] = None) -> FileData:
+def create_file_data(content: str | list[str], created_at: str | None = None) -> FileData:
     """Create FileData object with timestamps."""
     lines = split_content_into_lines(content)
     now = datetime.now(UTC).isoformat()
@@ -80,7 +79,7 @@ def upload_blob_with_optimistic_locking(
     blob,
     content: str,
     metadata: dict,
-    expected_generation: Optional[int] = None,
+    expected_generation: int | None = None,
     max_retries: int = 3
 ) -> bool:
     """Upload blob with optimistic locking using generation matching.

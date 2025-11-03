@@ -1,3 +1,5 @@
+from deepagents import SubAgentMiddleware
+from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
 from langchain.agents import create_agent
 from langchain.agents.middleware import (
     HumanInTheLoopMiddleware,
@@ -5,11 +7,10 @@ from langchain.agents.middleware import (
 )
 from langchain.agents.middleware.summarization import SummarizationMiddleware
 from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
-from deepagents import SubAgentMiddleware
-from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
 
-from src.agent.sub_agents import get_subagents
 from src.agent.middleware.config_to_state import ConfigToStateMiddleware
+from src.agent.state import MainAgentState
+from src.agent.sub_agents import get_subagents
 
 # Model Configuration
 MODEL_NAME = "claude-sonnet-4-20250514"
@@ -66,4 +67,5 @@ agent = create_agent(
     model=MODEL_NAME,
     middleware=deepagent_middleware,
     system_prompt=f"{RESEARCH_INSTRUCTIONS}\n\n{BASE_AGENT_PROMPT}",
+    state_schema=MainAgentState,
 ).with_config({"recursion_limit": RECURSION_LIMIT})

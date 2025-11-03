@@ -1,4 +1,3 @@
-from typing import Optional
 
 # Constants for formatting
 MAX_LINE_LENGTH = 2000
@@ -34,7 +33,7 @@ def split_content_into_lines(content: str | list[str]) -> list[str]:
     ]
 
 
-def check_empty_content(content: str) -> Optional[str]:
+def check_empty_content(content: str) -> str | None:
     """Check if content is empty and return warning message."""
     if not content or content.strip() == "":
         return EMPTY_CONTENT_WARNING

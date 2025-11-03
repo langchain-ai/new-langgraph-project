@@ -5,7 +5,6 @@ from google.api_core.exceptions import (
     ServiceUnavailable,
 )
 
-
 MAX_LINE_LENGTH = 2000
 LINE_NUMBER_WIDTH = 6
 DEFAULT_READ_OFFSET = 0

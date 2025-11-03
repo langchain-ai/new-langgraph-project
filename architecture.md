@@ -434,8 +434,70 @@ Future: `subagent.ainvoke(state, config=runtime.config)`
 ### Tracking Issue
 Watch for updates: https://github.com/anthropics/deepagents/issues
 
+## Testing Middleware Flow
+
+A comprehensive test suite is available to verify middleware propagation:
+
+```bash
+python test_middleware_flow.py
+```
+
+**Tests included**:
+1. ConfigToStateMiddleware in isolation
+2. GCSRuntimeMiddleware in isolation
+3. SubAgentMiddleware state propagation
+4. Middleware return value merging
+5. Full flow simulation (config → state → context)
+
+**Expected output**: All tests should pass ✅
+
+If tests pass but production fails, the issue is in how the agent is invoked (missing `gcs_root_path` in request config).
+
+## Common Issues & Debugging
+
+### Issue: "Missing required configuration: 'gcs_root_path'"
+
+**Cause**: Request doesn't include `gcs_root_path` in `config.configurable`
+
+**Debug steps**:
+1. Run `python test_middleware_flow.py` - should pass ✅
+2. Verify your request includes config:
+   ```python
+   config={"configurable": {"gcs_root_path": "/company-{id}/workspace-{id}/"}}
+   ```
+3. Check langgraph logs for actual config received
+
+**Solution**: See [USAGE.md](./USAGE.md) for correct invocation examples
+
+### Issue: "Missing required state key: 'gcs_root_path'"
+
+**Cause**: Sub-agent didn't receive `gcs_root_path` in state
+
+**Debug steps**:
+1. Run `python test_middleware_flow.py` - should pass ✅
+2. Verify `ConfigToStateMiddleware` is in main agent middleware stack
+3. Verify it's the **first** middleware (before SubAgentMiddleware)
+4. Add logging to `ConfigToStateMiddleware.before_agent()` to see what's returned
+
+**Solution**: Ensure middleware is properly configured in `src/agent/main.py`
+
+### Issue: Middleware logic not executing
+
+**Cause**: Only sync `before_agent()` implemented, not async `abefore_agent()`
+
+**Debug steps**:
+1. Check middleware class has both methods:
+   ```python
+   def before_agent(self, state, runtime): ...
+   async def abefore_agent(self, state, runtime): ...
+   ```
+2. Verify async delegates to sync for fast operations
+
+**Solution**: Implement both sync and async versions (async can delegate to sync)
+
 ## References
 
+- **Usage Guide**: [USAGE.md](./USAGE.md)
 - **Main Agent**: `src/agent/main.py`
 - **Sub-Agent Registry**: `src/agent/sub_agents/registry.py`
 - **Model Configuration**: `src/agent/config/models_config.py`
@@ -443,3 +505,4 @@ Watch for updates: https://github.com/anthropics/deepagents/issues
 - **Config Middleware**: `src/agent/middleware/config_to_state.py`
 - **GCS Tools**: `src/agent/tools/gcs_filesystem/`
 - **Shared GCS Utilities**: `src/agent/tools/shared/gcs/`
+- **Middleware Tests**: `test_middleware_flow.py` (root directory)

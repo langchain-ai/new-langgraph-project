@@ -177,6 +177,35 @@ src/agent/
         └── edit_file.py
 ```
 
+## State Management
+
+### Main Agent State Schema
+
+**Location**: `src/agent/state.py`
+
+The main agent uses `MainAgentState` which extends `AgentState` to include custom fields:
+
+```python
+class MainAgentState(AgentState):
+    gcs_root_path: Optional[str]
+```
+
+**Why this matters**:
+- `create_agent()` uses default schema (only `messages`) if not specified
+- Custom state fields require explicit `state_schema` parameter
+- Both main agent AND sub-agents must use same state schema to share fields
+
+### State Propagation Flow
+
+**Main Agent → Sub-Agent**:
+1. Main agent has `state_schema=MainAgentState` in `create_agent()`
+2. `ConfigToStateMiddleware` copies `gcs_root_path` from config to state
+3. `SubAgentMiddleware` passes ALL state fields (except `messages`, `todos`) to sub-agent
+4. Sub-agent MUST have `state_schema=MainAgentState` to receive custom fields
+5. Sub-agent middleware reads custom fields from state
+
+**CRITICAL**: If sub-agent uses default schema, it will ONLY receive `messages` even if main agent has custom fields in state.
+
 ## Key Design Patterns
 
 ### 1. Sub-Agent Delegation
@@ -199,13 +228,75 @@ Sub-agents use lazy initialization via factory functions (`GCS_FILESYSTEM_SUBAGE
 
 ## Adding New Sub-Agents
 
-1. Create directory: `src/agent/sub_agents/<name>/`
-2. Implement `agent.py` with `create_<name>_subagent()` function
-3. Add system prompt in `prompts.py`
-4. Add middleware if needed (e.g., for runtime config)
-5. Register in `src/agent/sub_agents/registry.py`
-6. Add model mapping in `src/agent/config/models_config.py`
-7. Update `WRITE_OPERATIONS_APPROVAL` in `main.py` if tools require human approval
+### CompiledSubAgent vs SubAgent
+
+**CRITICAL**: When sharing custom state fields beyond `messages`, sub-agents MUST use the `CompiledSubAgent` format.
+
+**SubAgent format** (dict config):
+- ❌ Cannot specify `state_schema`
+- ❌ Only receives `messages` in state
+- ✅ Simple for basic sub-agents with no custom state
+
+**CompiledSubAgent format** (pre-compiled runnable):
+- ✅ Can specify `state_schema` via `create_agent()`
+- ✅ Receives all state fields (e.g., `gcs_root_path`)
+- ✅ Required for multi-tenant or shared state scenarios
+- ⚠️ Model MUST be explicitly provided (cannot be None)
+
+### Implementation Steps
+
+1. **Create directory**: `src/agent/sub_agents/<name>/`
+
+2. **Implement `agent.py`** with `create_<name>_subagent()`:
+   ```python
+   from langchain.agents import create_agent
+   from src.agent.config.models_config import get_subagent_model
+   from src.agent.state import MainAgentState
+
+   def create_my_subagent(model=None):
+       # Get model from config if not provided
+       if model is None:
+           model = get_subagent_model("my-subagent")
+       if model is None:
+           raise ValueError("Model required for CompiledSubAgent")
+
+       # Create compiled graph with state_schema
+       compiled_subagent = create_agent(
+           model=model,
+           tools=[...],
+           system_prompt="...",
+           middleware=[...],
+           state_schema=MainAgentState,  # Share custom state
+       )
+
+       # Return CompiledSubAgent format
+       return {
+           "name": "my-subagent",
+           "description": "...",
+           "runnable": compiled_subagent,
+       }
+   ```
+
+3. **Add system prompt** in `prompts.py`
+
+4. **Add middleware** if needed (e.g., for runtime config extraction)
+
+5. **Register** in `src/agent/sub_agents/registry.py`
+
+6. **Add model mapping** in `src/agent/config/models_config.py`:
+   ```python
+   SUBAGENT_MODELS = {
+       "my-subagent": CLAUDE_HAIKU_4_5,
+   }
+   ```
+
+7. **Update state schema** in `src/agent/state.py` if adding new fields:
+   ```python
+   class MainAgentState(AgentState):
+       my_custom_field: Optional[str]
+   ```
+
+8. **Update `WRITE_OPERATIONS_APPROVAL`** in `main.py` if tools require approval
 
 ## Human-in-the-Loop
 

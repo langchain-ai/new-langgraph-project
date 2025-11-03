@@ -1,7 +1,6 @@
+from langchain.tools import ToolRuntime
 from langchain_core.tools import tool
 
-from .config import EDIT_FILE_TOOL_DESCRIPTION, GCS_RETRY
-from .tool_utils import normalize_gcs_blob_path, setup_gcs_bucket
 from src.agent.tools.shared.gcs.file_operations import (
     file_data_to_gcs,
     file_data_to_string,
@@ -11,15 +10,19 @@ from src.agent.tools.shared.gcs.file_operations import (
 )
 from src.agent.tools.shared.gcs.validation import validate_path
 
+from .config import EDIT_FILE_TOOL_DESCRIPTION, GCS_RETRY
+from .tool_utils import get_root_path_from_runtime, normalize_gcs_blob_path, setup_gcs_bucket
+
 
 def gcs_edit_file_tool_generator(bucket_name, custom_description=None):
     """Generate GCS edit_file tool."""
     description = custom_description or EDIT_FILE_TOOL_DESCRIPTION
 
     @tool(description=description)
-    def edit_file(file_path, old_string, new_string, replace_all=False):
+    def edit_file(file_path, old_string, new_string, replace_all=False, runtime: ToolRuntime = None):
+        root_path = get_root_path_from_runtime(runtime)
         bucket = setup_gcs_bucket(bucket_name)
-        file_path = validate_path(file_path)
+        file_path = validate_path(file_path, root_path)
         blob = bucket.blob(normalize_gcs_blob_path(file_path))
 
         @GCS_RETRY
