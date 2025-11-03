@@ -1,28 +1,31 @@
 """Middleware for GCS filesystem sub-agent."""
 
-from langgraph.config import get_config
 from langchain.agents.middleware.types import AgentMiddleware
 
 from src.agent.tools.shared.gcs.validation import set_gcs_root_path
 
 
 class GCSRuntimeMiddleware(AgentMiddleware):
-    """Middleware that extracts gcs_root_path from config for GCS tools."""
+    """
+    Middleware that extracts gcs_root_path from state for GCS tools.
+
+    NOTE: Reads from state instead of config due to deepagents SubAgentMiddleware
+    not propagating RunnableConfig to sub-agents. The main agent's ConfigToStateMiddleware
+    copies gcs_root_path from config.configurable to state.
+    """
 
     def __init__(self):
-        self.config_key = "gcs_root_path"
+        self.state_key = "gcs_root_path"
 
     def before_agent(self, state, runtime):
-        """Extract and validate gcs_root_path from runtime config."""
-        # Get the RunnableConfig and extract configurable
-        config = get_config()
-        configurable = config.get("configurable", {})
-        root_path = configurable.get(self.config_key)
+        """Extract and validate gcs_root_path from state."""
+        # Read from state (propagated by ConfigToStateMiddleware in main agent)
+        root_path = state.get(self.state_key)
 
         if not root_path:
             raise ValueError(
-                f"Missing required config: '{self.config_key}'. "
-                f"Frontend must provide gcs_root_path in config.configurable. "
+                f"Missing required state key: '{self.state_key}'. "
+                f"Ensure ConfigToStateMiddleware is configured in main agent. "
                 f"Expected format: /company-{{id}}/workspace-{{id}}/"
             )
 

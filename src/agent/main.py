@@ -9,6 +9,7 @@ from deepagents import SubAgentMiddleware
 from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
 
 from src.agent.sub_agents import get_subagents
+from src.agent.middleware.config_to_state import ConfigToStateMiddleware
 
 # Model Configuration
 MODEL_NAME = "claude-sonnet-4-20250514"
@@ -30,6 +31,9 @@ WRITE_OPERATIONS_APPROVAL = {
 
 # Middleware configuration matching create_deep_agent
 deepagent_middleware = [
+    # MUST be first: Propagate config to state for sub-agents
+    # (workaround for deepagents not propagating RunnableConfig)
+    ConfigToStateMiddleware(),
     TodoListMiddleware(),
     SubAgentMiddleware(
         default_model=MODEL_NAME,
