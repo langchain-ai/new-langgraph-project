@@ -9,6 +9,7 @@ from langchain.agents.middleware.summarization import SummarizationMiddleware
 from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 
 from src.agent.middleware.config_to_state import ConfigToStateMiddleware
+from src.agent.middleware.event_tracking import EventTrackingMiddleware
 from src.agent.state import MainAgentState
 from src.agent.sub_agents import get_subagents
 
@@ -45,6 +46,9 @@ deepagent_middleware = [
     # (workaround for deepagents not propagating RunnableConfig)
     ConfigToStateMiddleware(),
     TodoListMiddleware(),
+    # EventTrackingMiddleware MUST be before SubAgentMiddleware
+    # to intercept sub-agent calls and emit real-time events
+    EventTrackingMiddleware(),
     SubAgentMiddleware(
         default_model=MODEL_NAME,
         default_tools=[],  # No default tools - tools are in sub-agents
