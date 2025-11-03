@@ -9,8 +9,12 @@ This is a self-contained workaround that can be removed when deepagents
 fixes config propagation (see: https://github.com/anthropics/deepagents/issues/XXX)
 """
 
+import logging
+
 from langgraph.config import get_config
 from langchain.agents.middleware.types import AgentMiddleware
+
+logger = logging.getLogger(__name__)
 
 
 class ConfigToStateMiddleware(AgentMiddleware):
@@ -19,15 +23,30 @@ class ConfigToStateMiddleware(AgentMiddleware):
 
     This enables sub-agents to access runtime configuration that would
     otherwise be lost due to SubAgentMiddleware not propagating config.
+
+    REQUIRED: gcs_root_path must be provided in config.configurable.
+    Agent execution will fail if not present.
     """
 
     def before_agent(self, state, runtime):
-        """Extract gcs_root_path from config and add to state."""
+        """
+        Extract gcs_root_path from config and propagate to state.
+
+        Raises:
+            ValueError: If gcs_root_path is not provided in config.configurable
+        """
         config = get_config()
         configurable = config.get("configurable", {})
         gcs_root_path = configurable.get("gcs_root_path")
 
-        if gcs_root_path:
-            state["gcs_root_path"] = gcs_root_path
+        if not gcs_root_path:
+            error_msg = (
+                "Missing required configuration: 'gcs_root_path'. "
+                "Frontend must provide gcs_root_path in config.configurable. "
+                "Expected format: /company-{id}/workspace-{id}/"
+            )
+            logger.error(error_msg)
+            raise ValueError(error_msg)
 
-        return None
+        logger.debug(f"Propagating gcs_root_path to state: {gcs_root_path}")
+        return {"gcs_root_path": gcs_root_path}
