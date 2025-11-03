@@ -28,9 +28,12 @@ class ConfigToStateMiddleware(AgentMiddleware):
     Agent execution will fail if not present.
     """
 
-    def before_agent(self, state, runtime):
+    def _extract_gcs_root_path(self):
         """
-        Extract gcs_root_path from config and propagate to state.
+        Extract and validate gcs_root_path from config.
+
+        Returns:
+            dict: State update with gcs_root_path
 
         Raises:
             ValueError: If gcs_root_path is not provided in config.configurable
@@ -50,3 +53,21 @@ class ConfigToStateMiddleware(AgentMiddleware):
 
         logger.debug(f"Propagating gcs_root_path to state: {gcs_root_path}")
         return {"gcs_root_path": gcs_root_path}
+
+    def before_agent(self, state, runtime):
+        """
+        Extract gcs_root_path from config and propagate to state (sync).
+
+        Raises:
+            ValueError: If gcs_root_path is not provided in config.configurable
+        """
+        return self._extract_gcs_root_path()
+
+    async def abefore_agent(self, state, runtime):
+        """
+        Extract gcs_root_path from config and propagate to state (async).
+
+        Raises:
+            ValueError: If gcs_root_path is not provided in config.configurable
+        """
+        return self._extract_gcs_root_path()
