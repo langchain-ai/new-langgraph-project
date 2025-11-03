@@ -1,11 +1,8 @@
-"""Middleware to propagate runtime config to state for sub-agent access.
+"""Middleware to build GCS path from config and propagate to state.
 
 WORKAROUND: deepagents SubAgentMiddleware doesn't propagate RunnableConfig
-to sub-agents when calling subagent.ainvoke(state). This middleware copies
-config values to state so they can be accessed by sub-agents.
-
-This is a self-contained workaround that can be removed when deepagents
-fixes config propagation (see: https://github.com/anthropics/deepagents/issues/XXX)
+to sub-agents. This middleware builds the GCS path from company_slug and
+workspace_slug, then copies it to state for sub-agent access.
 """
 
 import logging
@@ -15,67 +12,53 @@ from langgraph.config import get_config
 
 logger = logging.getLogger(__name__)
 
+GCS_ROOT_PREFIX = "athena-enterprise"
+
 
 class ConfigToStateMiddleware(AgentMiddleware):
-    """Copy gcs_root_path from config.configurable to state.
+    """Build GCS path from company_slug and workspace_slug, propagate to state.
 
-    This enables sub-agents to access runtime configuration that would
-    otherwise be lost due to SubAgentMiddleware not propagating config.
+    Constructs real GCS path: athena-enterprise/{company_slug}/{workspace_slug}/
+    This enables sub-agents to access runtime configuration.
 
-    REQUIRED: gcs_root_path must be provided in config.configurable.
-    Agent execution will fail if not present.
+    REQUIRED: company_slug and workspace_slug in config.configurable.
     """
 
-    def _extract_gcs_root_path(self):
-        """Extract and validate gcs_root_path from config.
+    def _build_gcs_path(self):
+        """Build GCS path from company_slug and workspace_slug.
 
         Returns:
             dict: State update with gcs_root_path
 
         Raises:
-            ValueError: If gcs_root_path is not provided in config.configurable
+            ValueError: If required config missing
         """
         config = get_config()
-        logger.info(f"[ConfigToState] Received config keys: {list(config.keys())}")
-
         configurable = config.get("configurable", {})
-        logger.info(f"[ConfigToState] Configurable content: {configurable}")
 
-        gcs_root_path = configurable.get("gcs_root_path")
-        logger.info(f"[ConfigToState] Extracted gcs_root_path: {gcs_root_path}")
+        company_slug = configurable.get("company_slug")
+        workspace_slug = configurable.get("workspace_slug")
 
-        if not gcs_root_path:
-            error_msg = (
-                "Missing required configuration: 'gcs_root_path'. "
-                "Frontend must provide gcs_root_path in config.configurable. "
-                "Expected format: /company-{id}/workspace-{id}/"
+        if not company_slug or not workspace_slug:
+            raise ValueError(
+                "Missing required config: 'company_slug' and 'workspace_slug'. "
+                "Frontend must provide both in config.configurable."
             )
-            logger.error(f"[ConfigToState] {error_msg}")
-            logger.error(f"[ConfigToState] Full config dump: {config}")
-            raise ValueError(error_msg)
 
-        state_update = {"gcs_root_path": gcs_root_path}
-        logger.info(f"[ConfigToState] Propagating to state: {state_update}")
-        return state_update
+        # Build real GCS path: athena-enterprise/{company_slug}/{workspace_slug}/
+        gcs_root_path = f"{GCS_ROOT_PREFIX}/{company_slug}/{workspace_slug}/"
+
+        logger.info(
+            f"[ConfigToState] Built GCS path: {gcs_root_path} "
+            f"(company={company_slug}, workspace={workspace_slug})"
+        )
+
+        return {"gcs_root_path": gcs_root_path}
 
     def before_agent(self, state, runtime):
-        """Extract gcs_root_path from config and propagate to state (sync).
-
-        Raises:
-            ValueError: If gcs_root_path is not provided in config.configurable
-        """
-        logger.info(f"[ConfigToState] before_agent called with state keys: {list(state.keys())}")
-        result = self._extract_gcs_root_path()
-        logger.info(f"[ConfigToState] before_agent returning state update: {result}")
-        return result
+        """Build GCS path and propagate to state (sync)."""
+        return self._build_gcs_path()
 
     async def abefore_agent(self, state, runtime):
-        """Extract gcs_root_path from config and propagate to state (async).
-
-        Raises:
-            ValueError: If gcs_root_path is not provided in config.configurable
-        """
-        logger.info(f"[ConfigToState] abefore_agent called with state keys: {list(state.keys())}")
-        result = self._extract_gcs_root_path()
-        logger.info(f"[ConfigToState] abefore_agent returning state update: {result}")
-        return result
+        """Build GCS path and propagate to state (async)."""
+        return self._build_gcs_path()

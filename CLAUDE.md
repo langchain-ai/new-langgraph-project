@@ -97,26 +97,35 @@ All sub-agents must be registered in `get_subagents()`. To add a new sub-agent:
 
 ### GCS Runtime Configuration Flow
 
-**Critical for multi-tenancy**: The GCS root path is provided **per-request** by the frontend, not via environment variables.
+**Critical for multi-tenancy**: Workspace isolation is achieved through per-request configuration.
 
 **Flow**:
-1. Frontend sends request with `config.configurable.gcs_root_path = "/company-123/workspace-456/"`
-2. **Main Agent**: `ConfigToStateMiddleware.before_agent()` copies `gcs_root_path` from config to state
-3. **Sub-Agent**: `GCSRuntimeMiddleware.before_agent()` reads path from state
-4. Middleware validates and normalizes path format
-5. Middleware sets path in context using `set_gcs_root_path()`
-6. GCS tools read path from context using `get_gcs_root_path()`
+1. Frontend sends: `config.configurable = {company_slug: 'acme-corp', workspace_slug: 'cliente-1'}`
+2. **Main Agent**: `ConfigToStateMiddleware` builds GCS path:
+   - Input: `company_slug`, `workspace_slug`
+   - Output: `gcs_root_path = 'athena-enterprise/{company_slug}/{workspace_slug}/'`
+   - Saves to `state['gcs_root_path']`
+3. **Sub-Agent**: Receives `gcs_root_path` in state (via `CompiledSubAgent` with `state_schema=MainAgentState`)
+4. **GCSRuntimeMiddleware**: Validates path format
+5. **Tools**: Read `gcs_root_path` from `runtime.state` (NOT from ContextVar)
 
-**WORKAROUND NOTE**: Steps 2-3 implement a temporary workaround for deepagents `SubAgentMiddleware`
-not propagating `RunnableConfig` to sub-agents when calling `subagent.ainvoke()`.
-The `ConfigToStateMiddleware` copies config to state so sub-agents can access runtime configuration.
-When deepagents fixes config propagation, this middleware can be removed and step 3 changed to read directly from config.
+**CRITICAL Tool Pattern**:
+```python
+def my_tool(arg1, arg2, runtime: ToolRuntime = None):
+    root_path = get_root_path_from_runtime(runtime)  # From runtime.state
+    # Use root_path for operations
+```
+
+**Why runtime.state instead of ContextVar**:
+- ContextVar is thread-local and doesn't propagate across async tasks
+- Tools execute in different async context than middleware
+- `runtime.state` is guaranteed available in tool execution
 
 **Why this matters**:
-- Each request can specify a different workspace
-- Supports multi-tenant SaaS architecture
+- Each request isolated by company/workspace
+- Multi-tenant SaaS architecture
 - No shared state between requests
-- Security through runtime validation
+- Path mapping separates frontend logic from backend storage
 
 ### GCS Tools Architecture
 
@@ -310,6 +319,46 @@ WRITE_OPERATIONS_APPROVAL = {
 ```
 
 Add new tools to this dictionary if they require approval.
+
+## Key Learnings
+
+### Runtime Parameters: Always Use `runtime.state`
+
+**Rule**: For runtime parameters (per-request config), ALWAYS pass via state and read from `runtime.state` in tools.
+
+**Why ContextVar doesn't work**:
+- ContextVar is thread-local
+- Tools execute in different async task than middleware
+- Context is not propagated across task boundaries
+
+**Pattern**:
+```python
+# Tool implementation
+def my_tool(arg1, arg2, runtime: ToolRuntime = None):
+    param = runtime.state["my_param"]  # ✅ Works
+    # NOT: param = _context_var.get()  # ❌ Fails across async tasks
+```
+
+**Helper pattern for DRY**:
+```python
+def get_param_from_runtime(runtime: ToolRuntime) -> str:
+    if not runtime or "my_param" not in runtime.state:
+        raise RuntimeError("Param not found in runtime state")
+    return runtime.state["my_param"]
+```
+
+### Path Mapping for Multi-Tenancy
+
+**Pattern**: Frontend passes logical identifiers, backend maps to storage paths.
+
+**Benefits**:
+- Frontend doesn't know storage structure
+- Easy to change storage organization
+- Clear separation of concerns
+
+**Example** (GCS):
+- Frontend: `company_slug='acme'`, `workspace_slug='client1'`
+- Backend builds: `athena-enterprise/acme/client1/`
 
 ## Dependencies
 

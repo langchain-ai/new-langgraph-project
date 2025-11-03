@@ -24,31 +24,24 @@ class GCSRuntimeMiddleware(AgentMiddleware):
         self.state_key = "gcs_root_path"
 
     def before_agent(self, state, runtime):
-        """Extract and validate gcs_root_path from state."""
+        """Validate gcs_root_path from state."""
         root_path = state.get(self.state_key)
 
         if not root_path:
             raise ValueError(
                 f"Missing '{self.state_key}' in state. "
-                f"Ensure ConfigToStateMiddleware is configured. "
-                f"Expected format: /company-{{id}}/workspace-{{id}}/"
+                f"Ensure ConfigToStateMiddleware is configured."
             )
 
-        # Normalize path format
-        normalized = root_path
-        if not normalized.startswith("/"):
-            normalized = f"/{normalized}"
-        if not normalized.endswith("/"):
-            normalized = f"{normalized}/"
-
-        # Validate format
-        validate_root_path(normalized)
-
-        # Update state with normalized path if changed
-        if normalized != root_path:
-            logger.info(f"[GCSRuntime] Normalized path: {root_path} -> {normalized}")
+        # Ensure trailing slash
+        if not root_path.endswith("/"):
+            normalized = f"{root_path}/"
+            logger.info(f"[GCSRuntime] Added trailing slash: {root_path} -> {normalized}")
+            validate_root_path(normalized)
             return {self.state_key: normalized}
 
+        # Validate format
+        validate_root_path(root_path)
         return None
 
     async def abefore_agent(self, state, runtime):
