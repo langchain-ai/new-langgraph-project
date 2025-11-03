@@ -12,14 +12,12 @@ from langgraph.config import get_config
 
 logger = logging.getLogger(__name__)
 
-GCS_ROOT_PREFIX = "athena-enterprise"
-
 
 class ConfigToStateMiddleware(AgentMiddleware):
     """Build GCS path from company_slug and workspace_slug, propagate to state.
 
-    Constructs real GCS path: athena-enterprise/{company_slug}/{workspace_slug}/
-    This enables sub-agents to access runtime configuration.
+    Constructs GCS path inside bucket: {company_slug}/{workspace_slug}/
+    (bucket name is separate in tools configuration)
 
     REQUIRED: company_slug and workspace_slug in config.configurable.
     """
@@ -45,8 +43,8 @@ class ConfigToStateMiddleware(AgentMiddleware):
                 "Frontend must provide both in config.configurable."
             )
 
-        # Build real GCS path: athena-enterprise/{company_slug}/{workspace_slug}/
-        gcs_root_path = f"{GCS_ROOT_PREFIX}/{company_slug}/{workspace_slug}/"
+        # Build GCS path inside bucket: {company_slug}/{workspace_slug}/
+        gcs_root_path = f"{company_slug}/{workspace_slug}/"
 
         logger.info(
             f"[ConfigToState] Built GCS path: {gcs_root_path} "

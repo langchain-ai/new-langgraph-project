@@ -4,10 +4,9 @@ import re
 
 logger = logging.getLogger(__name__)
 
-# GCS path format: athena-enterprise/{company_slug}/{workspace_slug}/
+# GCS path format inside bucket: {company_slug}/{workspace_slug}/
 GCS_PATH_PATTERN = re.compile(
-    r"^athena-enterprise/"
-    r"[a-zA-Z0-9]([a-zA-Z0-9\-_]{0,61}[a-zA-Z0-9])?/"
+    r"^[a-zA-Z0-9]([a-zA-Z0-9\-_]{0,61}[a-zA-Z0-9])?/"
     r"[a-zA-Z0-9]([a-zA-Z0-9\-_]{0,61}[a-zA-Z0-9])?/?$"
 )
 
@@ -28,7 +27,7 @@ def validate_root_path(root_path: str) -> None:
     """Validate GCS root path format.
 
     Args:
-        root_path: Must be in format athena-enterprise/{company}/{workspace}/
+        root_path: Must be in format {company}/{workspace}/
 
     Raises:
         ValueError: If root_path format is invalid
@@ -37,7 +36,7 @@ def validate_root_path(root_path: str) -> None:
         logger.error(f"[GCSValidation] Invalid GCS path: {root_path}")
         raise ValueError(
             f"Invalid GCS root_path: '{root_path}'. "
-            f"Expected format: athena-enterprise/{{company}}/{{workspace}}/ "
+            f"Expected format: {{company}}/{{workspace}}/ "
             f"(slugs: alphanumeric, hyphens, underscores, 1-63 chars)"
         )
 
@@ -47,7 +46,7 @@ def validate_path(path: str, root_path: str) -> str:
 
     Args:
         path: Requested file path (relative or absolute)
-        root_path: GCS root path (athena-enterprise/{company}/{workspace}/)
+        root_path: GCS root path inside bucket ({company}/{workspace}/)
 
     Returns:
         Full GCS path with workspace prefix

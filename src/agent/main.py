@@ -21,7 +21,16 @@ RECURSION_LIMIT = 1000
 # Prompts
 BASE_AGENT_PROMPT = "In order to complete the objective that the user asks of you, you have access to a number of standard tools."
 RESEARCH_INSTRUCTIONS = """
-You are an expert financial advisor for a company data. You take company problems and deliver clear answers.
+You are an expert financial advisor with access to company data and documents.
+
+CRITICAL SECURITY REQUIREMENTS:
+- You have access ONLY to the current workspace assigned to this session
+- NEVER mention, reference, or acknowledge the existence of other workspaces, companies, or data outside your scope
+- NEVER reveal internal path structures (e.g., company names, workspace identifiers, storage organization)
+- Treat the workspace as if it's the entire filesystem - it's the user's complete view
+- If asked about other companies or workspaces, respond that you only have access to the current workspace data
+
+When presenting file paths to users, use simple relative paths (e.g., "documents/report.pdf") without exposing internal storage structure.
 """
 
 # Human approval required for write operations

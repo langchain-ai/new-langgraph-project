@@ -103,11 +103,13 @@ All sub-agents must be registered in `get_subagents()`. To add a new sub-agent:
 1. Frontend sends: `config.configurable = {company_slug: 'acme-corp', workspace_slug: 'cliente-1'}`
 2. **Main Agent**: `ConfigToStateMiddleware` builds GCS path:
    - Input: `company_slug`, `workspace_slug`
-   - Output: `gcs_root_path = 'athena-enterprise/{company_slug}/{workspace_slug}/'`
+   - Output: `gcs_root_path = '{company_slug}/{workspace_slug}/'` (path inside bucket)
+   - Bucket name from env: `GCS_BUCKET_NAME='athena-enterprise'`
+   - Full GCS URL: `gs://athena-enterprise/{company_slug}/{workspace_slug}/`
    - Saves to `state['gcs_root_path']`
 3. **Sub-Agent**: Receives `gcs_root_path` in state (via `CompiledSubAgent` with `state_schema=MainAgentState`)
 4. **GCSRuntimeMiddleware**: Validates path format
-5. **Tools**: Read `gcs_root_path` from `runtime.state` (NOT from ContextVar)
+5. **Tools**: Read `gcs_root_path` from `runtime.state`, strip from results to show workspace-relative paths
 
 **CRITICAL Tool Pattern**:
 ```python
@@ -349,16 +351,19 @@ def get_param_from_runtime(runtime: ToolRuntime) -> str:
 
 ### Path Mapping for Multi-Tenancy
 
-**Pattern**: Frontend passes logical identifiers, backend maps to storage paths.
+**Pattern**: Frontend passes logical identifiers, backend maps to storage paths + strips from output.
 
 **Benefits**:
 - Frontend doesn't know storage structure
+- Users never see internal organization
 - Easy to change storage organization
-- Clear separation of concerns
+- Perfect workspace isolation
 
 **Example** (GCS):
-- Frontend: `company_slug='acme'`, `workspace_slug='client1'`
-- Backend builds: `athena-enterprise/acme/client1/`
+- Frontend sends: `company_slug='acme-corp'`, `workspace_slug='cliente-1'`
+- Backend builds: `acme-corp/cliente-1/` (inside bucket `athena-enterprise`)
+- Tools strip prefix from results: `/documentazione_tecnica/` (not `/acme-corp/cliente-1/documentazione_tecnica/`)
+- Users see clean relative paths as if workspace is root filesystem
 
 ## Dependencies
 

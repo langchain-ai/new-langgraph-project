@@ -33,8 +33,24 @@ def gcs_ls_tool_generator(bucket_name, custom_description=None):
 
         iterator = _list_blobs()
 
-        files = [f"/{blob.name}" for blob in iterator]
-        directories = [f"/{prefix}" for prefix in iterator.prefixes]
+        # Remove root_path prefix to show workspace-relative paths
+        root_prefix = normalize_gcs_blob_path(root_path)
+
+        files = []
+        for blob in iterator:
+            # Remove root prefix to get workspace-relative path
+            relative_path = blob.name
+            if relative_path.startswith(root_prefix):
+                relative_path = relative_path[len(root_prefix):]
+            files.append(f"/{relative_path}" if relative_path else "/")
+
+        directories = []
+        for prefix_path in iterator.prefixes:
+            # Remove root prefix to get workspace-relative path
+            relative_path = prefix_path
+            if relative_path.startswith(root_prefix):
+                relative_path = relative_path[len(root_prefix):]
+            directories.append(f"/{relative_path}" if relative_path else "/")
 
         return files + directories
 
