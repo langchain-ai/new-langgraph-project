@@ -12,9 +12,9 @@ from src.agent.middleware.config_to_state import ConfigToStateMiddleware
 from src.agent.middleware.event_tracking import EventTrackingMiddleware
 from src.agent.state import MainAgentState
 from src.agent.sub_agents import get_subagents
+from src.agent.config.models_config import CLAUDE_SONNET_4_5, CLAUDE_HAIKU_4_5
 
 # Model Configuration
-MODEL_NAME = "claude-sonnet-4-20250514"
 MAX_TOKENS_BEFORE_SUMMARY = 170000
 MESSAGES_TO_KEEP = 6
 RECURSION_LIMIT = 1000
@@ -50,13 +50,13 @@ deepagent_middleware = [
     # to intercept sub-agent calls and emit real-time events
     EventTrackingMiddleware(),
     SubAgentMiddleware(
-        default_model=MODEL_NAME,
+        default_model=CLAUDE_HAIKU_4_5,
         default_tools=[],  # No default tools - tools are in sub-agents
         subagents=get_subagents(),  # Include all registered sub-agents
         default_middleware=[
             TodoListMiddleware(),
             SummarizationMiddleware(
-                model=MODEL_NAME,
+                model=CLAUDE_HAIKU_4_5,
                 max_tokens_before_summary=MAX_TOKENS_BEFORE_SUMMARY,
                 messages_to_keep=MESSAGES_TO_KEEP,
             ),
@@ -67,7 +67,7 @@ deepagent_middleware = [
         general_purpose_agent=True,
     ),
     SummarizationMiddleware(
-        model=MODEL_NAME,
+        model=CLAUDE_HAIKU_4_5,
         max_tokens_before_summary=MAX_TOKENS_BEFORE_SUMMARY,
         messages_to_keep=MESSAGES_TO_KEEP,
     ),
@@ -77,7 +77,7 @@ deepagent_middleware = [
 ]
 
 agent = create_agent(
-    model=MODEL_NAME,
+    model=CLAUDE_SONNET_4_5,
     middleware=deepagent_middleware,
     system_prompt=f"{RESEARCH_INSTRUCTIONS}\n\n{BASE_AGENT_PROMPT}",
     state_schema=MainAgentState,
