@@ -54,9 +54,13 @@ def file_data_to_gcs(file_data: FileData) -> tuple[str, dict]:
 
 
 def gcs_blob_to_file_data(blob) -> FileData:
-    """Convert GCS blob to FileData with retry logic."""
+    """Convert GCS blob to FileData.
+
+    Note: No retry wrapper here since UnicodeDecodeError is deterministic.
+    Retrying won't fix encoding issues.
+    """
     try:
-        content = GCS_RETRY(blob.download_as_text)()
+        content = blob.download_as_text()
     except UnicodeDecodeError:
         error_msg = (
             f"Cannot read '{blob.name}' as text file. "
