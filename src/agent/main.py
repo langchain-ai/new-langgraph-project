@@ -7,6 +7,8 @@ This module creates the main LangGraph agent with middleware stack including:
 - Human-in-the-loop approval for write operations
 """
 
+import os
+
 from deepagents import SubAgentMiddleware
 from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
 from langchain.agents import create_agent
@@ -23,6 +25,7 @@ from src.agent.middleware.event_tracking import EventTrackingMiddleware
 from src.agent.middleware.mention_context import MentionContextMiddleware
 from src.agent.state import MainAgentState
 from src.agent.sub_agents import get_subagents
+from src.agent.tools.gcs_filesystem import gcs_ls_tool_generator
 
 # Model Configuration
 MAX_TOKENS_BEFORE_SUMMARY = 170000
@@ -49,6 +52,16 @@ WRITE_OPERATIONS_APPROVAL = {
     "write_file": True,
     "edit_file": True,
 }
+
+# Main agent tools
+# Generate ls tool for direct access in main agent (also available in sub-agent)
+_bucket_name = os.getenv("GCS_BUCKET_NAME")
+if not _bucket_name:
+    raise ValueError("GCS_BUCKET_NAME environment variable is required")
+
+main_agent_tools = [
+    gcs_ls_tool_generator(bucket_name=_bucket_name),
+]
 
 # Middleware configuration matching create_deep_agent
 deepagent_middleware = [
@@ -90,6 +103,7 @@ deepagent_middleware = [
 
 agent = create_agent(
     model=CLAUDE_SONNET_4_5,
+    tools=main_agent_tools,
     middleware=deepagent_middleware,
     system_prompt=f"{RESEARCH_INSTRUCTIONS}\n\n{BASE_AGENT_PROMPT}",
     state_schema=MainAgentState,
