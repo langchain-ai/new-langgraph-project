@@ -73,12 +73,50 @@ class MentionContextMiddleware(AgentMiddleware):
     - Graceful error handling
     """
 
+    def _enrich_prompt(
+        self,
+        request: ModelRequest,
+    ) -> None:
+        """Enrich system prompt with mention context (shared logic).
+
+        Args:
+            request: Model request to modify in-place
+        """
+        mention_context = request.state.get("mention_context")
+
+        if not mention_context:
+            # No mention context, skip enrichment
+            return
+
+        # Type check (should be MentionContext from ConfigToStateMiddleware)
+        if not isinstance(mention_context, MentionContext):
+            logger.error(
+                f"[MentionContext] Invalid type: {type(mention_context)}, "
+                "expected MentionContext"
+            )
+            # Skip enrichment
+            return
+
+        if not mention_context.files and not mention_context.folders:
+            # Empty mention context
+            return
+
+        # Build enriched prompt with sanitization
+        enriched_prompt = self._build_enriched_prompt(
+            request.system_prompt, mention_context
+        )
+
+        # Modify request in-place
+        request.system_prompt = enriched_prompt
+
+        logger.info("[MentionContext] Enriched prompt with mention context")
+
     def wrap_model_call(
         self,
         request: ModelRequest,
         handler: Callable[[ModelRequest], ModelResponse],
     ) -> ModelResponse:
-        """Enrich system prompt with mention context before model call.
+        """Enrich system prompt with mention context before model call (sync).
 
         Args:
             request: Model request with state containing mention_context
@@ -88,38 +126,8 @@ class MentionContextMiddleware(AgentMiddleware):
             Model response from handler
         """
         try:
-            mention_context = request.state.get("mention_context")
-
-            if not mention_context:
-                # No mention context, proceed normally
-                return handler(request)
-
-            # Type check (should be MentionContext from ConfigToStateMiddleware)
-            if not isinstance(mention_context, MentionContext):
-                logger.error(
-                    f"[MentionContext] Invalid type: {type(mention_context)}, "
-                    "expected MentionContext"
-                )
-                # Skip enrichment, proceed without mention context
-                return handler(request)
-
-            if not mention_context.files and not mention_context.folders:
-                # Empty mention context
-                return handler(request)
-
-            # Build enriched prompt with sanitization
-            enriched_prompt = self._build_enriched_prompt(
-                request.system_prompt, mention_context
-            )
-
-            # Modify request in-place
-            request.system_prompt = enriched_prompt
-
-            logger.info("[MentionContext] Enriched prompt with mention context")
-
-            # Execute with enriched prompt
+            self._enrich_prompt(request)
             return handler(request)
-
         except Exception as e:
             # Log error but don't crash - graceful degradation
             logger.error(
@@ -127,6 +135,31 @@ class MentionContextMiddleware(AgentMiddleware):
             )
             # Continue without enrichment
             return handler(request)
+
+    async def awrap_model_call(
+        self,
+        request: ModelRequest,
+        handler: Callable[[ModelRequest], ModelResponse],
+    ) -> ModelResponse:
+        """Enrich system prompt with mention context before model call (async).
+
+        Args:
+            request: Model request with state containing mention_context
+            handler: Async handler to execute model request
+
+        Returns:
+            Model response from handler
+        """
+        try:
+            self._enrich_prompt(request)
+            return await handler(request)
+        except Exception as e:
+            # Log error but don't crash - graceful degradation
+            logger.error(
+                f"[MentionContext] Failed to enrich prompt: {e}", exc_info=True
+            )
+            # Continue without enrichment
+            return await handler(request)
 
     def _sanitize_path(self, path: str) -> str:
         """Sanitize path for safe display in prompt.
