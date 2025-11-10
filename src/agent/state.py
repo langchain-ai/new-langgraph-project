@@ -1,8 +1,8 @@
 """State schema for the main agent with GCS runtime configuration."""
 
-from langchain.agents.middleware.types import AgentState
+from typing import Any, Dict
 
-from src.agent.schemas.mention_context import MentionContext
+from langchain.agents.middleware.types import AgentState
 
 
 class MainAgentState(AgentState):
@@ -18,9 +18,10 @@ class MainAgentState(AgentState):
     Attributes:
         gcs_root_path: Runtime GCS path for workspace isolation.
                       Format: /company-{id}/workspace-{id}/
-        mention_context: Validated pre-loaded content from @mentions.
-                        See MentionContext schema for structure.
+        mention_context: Pre-loaded content from @mentions (dict format).
+                        Validated by ConfigToStateMiddleware using MentionContext schema.
+                        Stored as dict for LangGraph serialization compatibility.
     """
 
     gcs_root_path: str | None
-    mention_context: MentionContext | None
+    mention_context: Dict[str, Any] | None

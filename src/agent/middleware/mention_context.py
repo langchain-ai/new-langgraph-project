@@ -82,17 +82,29 @@ class MentionContextMiddleware(AgentMiddleware):
         Args:
             request: Model request to modify in-place
         """
-        mention_context = request.state.get("mention_context")
+        mention_context_raw = request.state.get("mention_context")
 
-        if not mention_context:
+        if not mention_context_raw:
             # No mention context, skip enrichment
             return
 
-        # Type check (should be MentionContext from ConfigToStateMiddleware)
-        if not isinstance(mention_context, MentionContext):
+        # LangGraph serializes state, so MentionContext becomes dict
+        # Re-validate if needed
+        if isinstance(mention_context_raw, dict):
+            try:
+                mention_context = MentionContext(**mention_context_raw)
+            except Exception as e:
+                logger.error(
+                    f"[MentionContext] Failed to parse mention_context dict: {e}"
+                )
+                # Skip enrichment
+                return
+        elif isinstance(mention_context_raw, MentionContext):
+            # Already a MentionContext (shouldn't happen due to serialization)
+            mention_context = mention_context_raw
+        else:
             logger.error(
-                f"[MentionContext] Invalid type: {type(mention_context)}, "
-                "expected MentionContext"
+                f"[MentionContext] Invalid type: {type(mention_context_raw)}"
             )
             # Skip enrichment
             return
@@ -236,53 +248,85 @@ class MentionContextMiddleware(AgentMiddleware):
         base = base_prompt or ""
         context_parts = []
 
-        # Add file contents
+        # Add warnings if present
+        if mention_context.warnings:
+            context_parts.append("\n## Warnings\n")
+            for warning in mention_context.warnings:
+                context_parts.append(f"- {warning}\n")
+
+        # Add top-level file contents
         if mention_context.files:
             context_parts.append("\n## Referenced Files\n")
             context_parts.append(
-                "The user has mentioned the following files in their message. "
+                "The user has mentioned the following files. "
                 "Use this content to answer their question:\n"
             )
 
             for file_info in mention_context.files:
-                # Sanitize path for display
+                # Sanitize name and path for display
+                name = self._sanitize_path(file_info.name)
                 path = self._sanitize_path(file_info.path)
 
                 # Sanitize content for security
                 content = self._sanitize_file_content(file_info.content, file_info.path)
 
                 if content:
-                    context_parts.append(f"\n**File: {path}**\n```\n{content}\n```\n")
+                    context_parts.append(
+                        f"\n**File: {name}** (path: {path})\n```\n{content}\n```\n"
+                    )
                 else:
-                    context_parts.append(f"\n**File: {path}**\n(Empty file)\n")
+                    context_parts.append(
+                        f"\n**File: {name}** (path: {path})\n(Empty file)\n"
+                    )
 
-        # Add folder information
+        # Add folder information with files
         if mention_context.folders:
             context_parts.append("\n## Referenced Folders\n")
-            context_parts.append(
-                "The user has mentioned the following folders. "
-                "These are the files contained in each folder:\n"
-            )
 
             for folder_info in mention_context.folders:
-                # Sanitize folder path for display
-                path = self._sanitize_path(folder_info.path)
+                # Sanitize folder name
+                folder_name = self._sanitize_path(folder_info.name)
 
-                if folder_info.files:
-                    context_parts.append(f"\n**Folder: {path}**\n")
-                    context_parts.append(f"Contains {len(folder_info.files)} files:\n")
+                total_files = (
+                    folder_info.metadata.total_files
+                    if folder_info.metadata
+                    else len(folder_info.files_complete) + len(folder_info.files_remaining)
+                )
 
-                    # Limit display to first MAX_FOLDER_FILES_DISPLAY files
-                    for file_path in folder_info.files[:MAX_FOLDER_FILES_DISPLAY]:
-                        # Sanitize each file path in folder
-                        sanitized_file = self._sanitize_path(file_path)
-                        context_parts.append(f"  - {sanitized_file}\n")
+                context_parts.append(f"\n**Folder: {folder_name}**\n")
+                context_parts.append(f"Total files: {total_files}\n\n")
 
-                    if len(folder_info.files) > MAX_FOLDER_FILES_DISPLAY:
-                        remaining = len(folder_info.files) - MAX_FOLDER_FILES_DISPLAY
-                        context_parts.append(f"  ... and {remaining} more files\n")
-                else:
-                    context_parts.append(f"\n**Folder: {path}**\n(Empty folder)\n")
+                # Add files with content (first 20)
+                if folder_info.files_complete:
+                    context_parts.append("Files with content:\n")
+
+                    for file_info in folder_info.files_complete[:MAX_FOLDER_FILES_DISPLAY]:
+                        name = self._sanitize_path(file_info.name)
+                        content = self._sanitize_file_content(
+                            file_info.content, file_info.path
+                        )
+
+                        if content:
+                            context_parts.append(
+                                f"\n- **{name}**\n```\n{content}\n```\n"
+                            )
+                        else:
+                            context_parts.append(f"\n- **{name}** (empty)\n")
+
+                # Add remaining files (metadata only)
+                if folder_info.files_remaining:
+                    remaining_count = len(folder_info.files_remaining)
+                    context_parts.append(f"\nAdditional {remaining_count} files ")
+                    context_parts.append("(metadata only, use file tools to read):\n")
+
+                    # List first 20 remaining files
+                    for file_info in folder_info.files_remaining[:20]:
+                        name = self._sanitize_path(file_info.name)
+                        category = file_info.category or "unknown"
+                        context_parts.append(f"  - {name} ({category})\n")
+
+                    if remaining_count > 20:
+                        context_parts.append(f"  ... and {remaining_count - 20} more\n")
 
         # Combine base prompt with context
         if context_parts:

@@ -67,21 +67,28 @@ class ConfigToStateMiddleware(AgentMiddleware):
         """
         from src.agent.tools.shared.gcs.validation import validate_path
 
-        # Validate file paths
+        # Validate top-level file paths
         for file_info in mention_context.files:
             try:
                 validate_path(file_info.path, gcs_root_path)
             except ValueError as e:
                 logger.error(f"[ConfigToState] Invalid file path: {file_info.path}")
-                raise ValueError(f"Invalid file path in mentions: {file_info.path}") from e
+                raise ValueError(
+                    f"Invalid file path in mentions: {file_info.path}"
+                ) from e
 
-        # Validate folder paths
+        # Validate paths in folder files_complete
         for folder_info in mention_context.folders:
-            try:
-                validate_path(folder_info.path, gcs_root_path)
-            except ValueError as e:
-                logger.error(f"[ConfigToState] Invalid folder path: {folder_info.path}")
-                raise ValueError(f"Invalid folder path in mentions: {folder_info.path}") from e
+            for file_info in folder_info.files_complete:
+                try:
+                    validate_path(file_info.path, gcs_root_path)
+                except ValueError as e:
+                    logger.error(
+                        f"[ConfigToState] Invalid file path in folder: {file_info.path}"
+                    )
+                    raise ValueError(
+                        f"Invalid file path in folder {folder_info.name}: {file_info.path}"
+                    ) from e
 
     def _build_state_from_config(self):
         """Build state from config (GCS path + mention context).
@@ -123,8 +130,9 @@ class ConfigToStateMiddleware(AgentMiddleware):
                 # Validate paths are within workspace (security)
                 self._validate_mention_paths(mention_context, gcs_root_path)
 
-                # Store validated mention context
-                state_update["mention_context"] = mention_context
+                # Store as dict for LangGraph serialization compatibility
+                # (Pydantic models get serialized/deserialized by LangGraph)
+                state_update["mention_context"] = mention_context_raw
 
                 logger.info(
                     f"[ConfigToState] Validated mention_context with "
