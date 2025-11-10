@@ -4,7 +4,11 @@ from langchain_core.tools import tool
 from src.agent.tools.shared.gcs.validation import validate_path
 
 from .config import GCS_RETRY, LS_TOOL_DESCRIPTION
-from .tool_utils import get_root_path_from_runtime, normalize_gcs_blob_path, setup_gcs_bucket
+from .tool_utils import (
+    get_root_path_from_runtime,
+    normalize_gcs_blob_path,
+    setup_gcs_bucket,
+)
 
 
 def gcs_ls_tool_generator(bucket_name, custom_description=None):

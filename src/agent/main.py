@@ -1,3 +1,12 @@
+"""Main agent configuration and initialization.
+
+This module creates the main LangGraph agent with middleware stack including:
+- ConfigToStateMiddleware: Extracts config to state for sub-agent access
+- MentionContextMiddleware: Enriches prompt with @mention file/folder content
+- SubAgentMiddleware: Delegates operations to specialized sub-agents
+- Human-in-the-loop approval for write operations
+"""
+
 from deepagents import SubAgentMiddleware
 from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
 from langchain.agents import create_agent
@@ -8,11 +17,12 @@ from langchain.agents.middleware import (
 from langchain.agents.middleware.summarization import SummarizationMiddleware
 from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 
+from src.agent.config.models_config import CLAUDE_HAIKU_4_5, CLAUDE_SONNET_4_5
 from src.agent.middleware.config_to_state import ConfigToStateMiddleware
 from src.agent.middleware.event_tracking import EventTrackingMiddleware
+from src.agent.middleware.mention_context import MentionContextMiddleware
 from src.agent.state import MainAgentState
 from src.agent.sub_agents import get_subagents
-from src.agent.config.models_config import CLAUDE_SONNET_4_5, CLAUDE_HAIKU_4_5
 
 # Model Configuration
 MAX_TOKENS_BEFORE_SUMMARY = 170000
@@ -45,6 +55,8 @@ deepagent_middleware = [
     # MUST be first: Propagate config to state for sub-agents
     # (workaround for deepagents not propagating RunnableConfig)
     ConfigToStateMiddleware(),
+    # Add mention context to prompt (after state is populated)
+    MentionContextMiddleware(),
     TodoListMiddleware(),
     # EventTrackingMiddleware MUST be before SubAgentMiddleware
     # to intercept sub-agent calls and emit real-time events

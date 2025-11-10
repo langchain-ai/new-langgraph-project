@@ -11,7 +11,11 @@ from src.agent.tools.shared.gcs.file_operations import (
 from src.agent.tools.shared.gcs.validation import validate_path
 
 from .config import EDIT_FILE_TOOL_DESCRIPTION, GCS_RETRY
-from .tool_utils import get_root_path_from_runtime, normalize_gcs_blob_path, setup_gcs_bucket
+from .tool_utils import (
+    get_root_path_from_runtime,
+    normalize_gcs_blob_path,
+    setup_gcs_bucket,
+)
 
 
 def gcs_edit_file_tool_generator(bucket_name, custom_description=None):
