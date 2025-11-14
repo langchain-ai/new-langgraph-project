@@ -16,30 +16,7 @@ VoicedForm is a conversational AI system designed to simplify the process of com
 
 VoicedForm implements a directed acyclic graph (DAG) workflow with the following nodes:
 
-```
-Supervisor → Form Selector → Form Completion → Validator
-```
-
-### Workflow Components
-
-1. **Supervisor Node**: Analyzes the context and determines the appropriate form type
-2. **Form Selector Node**: Uses LLM to identify and describe form fields
-3. **Form Completion Node**: Guides interactive form filling with AI assistance
-4. **Validator Node**: Verifies the completed form meets requirements
-
-## Prerequisites
-
-- Python 3.9 or higher
-- OpenAI API key (for GPT-4 access)
-- (Optional) LangSmith API key for tracing and debugging
-
-## Installation
-
-1. Clone the repository:
-```bash
-git clone <repository-url>
-cd VoicedForm
-```
+1. Install dependencies, along with the [LangGraph CLI](https://langchain-ai.github.io/langgraph/concepts/langgraph_cli/), which will be used to run the server.
 
 2. Install dependencies:
 ```bash
@@ -93,7 +70,7 @@ langgraph dev
 
 3. Access the API endpoints or use LangGraph Studio for visual debugging
 
-### Using LangGraph Studio
+1. **Define runtime context**: Modify the `Context` class in the `graph.py` file to expose the arguments you want to configure per assistant. For example, in a chatbot application you may want to define a dynamic system prompt or LLM to use. For more information on runtime context in LangGraph, [see here](https://langchain-ai.github.io/langgraph/agents/context/?h=context#static-runtime-context).
 
 LangGraph Studio provides a visual interface for debugging and monitoring your workflows:
 
@@ -219,15 +196,5 @@ Enable tracing by setting `LANGSMITH_API_KEY` in your `.env` file.
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for detaiz
 
-## Support
-
-For issues, questions, or contributions:
-- Open an issue on GitHub
-- Review the [LangGraph documentation](https://langchain-ai.github.io/langgraph/)
-- Check [LangChain documentation](https://python.langchain.com/)
-
-## Acknowledgments
-
-Built with [LangGraph](https://github.com/langchain-ai/langgraph) by LangChain.
