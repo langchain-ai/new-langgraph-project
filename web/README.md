@@ -83,15 +83,40 @@ GOOGLE_CLIENT_SECRET=GOCSPX-your_google_client_secret
 # OpenAI (for future LLM features)
 OPENAI_API_KEY=sk-your_openai_api_key
 
-# Whisper (for future voice features)
-WHISPER_WS_URL=ws://localhost:8765
+# Whisper Service (Modal deployment - see /whisper-service/README.md)
+WHISPER_WS_URL=wss://your-workspace--voicedform-whisper-transcribe-websocket.modal.run
 
 # Gmail API (for email sending)
 GMAIL_CLIENT_ID=your_gmail_client_id
 GMAIL_CLIENT_SECRET=your_gmail_client_secret
 ```
 
-### 5. Run Development Server
+### 5. Deploy Whisper Service (Optional - for Voice Input)
+
+The Whisper service enables voice-to-text transcription. Deploy to Modal:
+
+```bash
+# Install Modal CLI
+pip install modal
+
+# Authenticate
+modal token new
+
+# Deploy Whisper service
+cd ../whisper-service
+modal deploy whisper_server.py
+```
+
+After deployment, copy the WebSocket URL and update `.env.local`:
+```bash
+WHISPER_WS_URL=wss://your-workspace--voicedform-whisper-transcribe-websocket.modal.run
+```
+
+**Note**: Voice input is optional. The app works with text input if Whisper is not configured.
+
+See `/whisper-service/README.md` for detailed deployment instructions, configuration options, and troubleshooting.
+
+### 6. Run Development Server
 
 ```bash
 npm run dev

@@ -763,9 +763,11 @@ Landing (/)
 - **WebSocket Server:** ws or Socket.io
 
 ### 8.3 AI/ML Services
-- **Transcription:** OpenAI Whisper (self-hosted)
-  - Model: `tiny.en` or `base.en`
-  - Deployment: Docker container or Python service
+- **Transcription:** OpenAI Whisper (Modal deployment)
+  - Model: `base.en` (configurable: tiny, small, medium)
+  - Deployment: Modal.com serverless with GPU (T4)
+  - WebSocket endpoint for real-time transcription
+  - See `/whisper-service/README.md` for deployment
 - **LLM:** OpenAI GPT-4 or GPT-3.5-turbo
   - SDK: `openai` npm package
 

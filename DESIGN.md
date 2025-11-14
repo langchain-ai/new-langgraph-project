@@ -947,7 +947,7 @@ All API errors follow this structure:
 |-----------|----------|-----------|
 | Next.js App | Vercel | Built for Next.js, easy deployment, edge functions |
 | Supabase | Supabase Cloud | Managed Postgres + Storage, generous free tier |
-| Whisper Service | Railway / Fly.io | Supports Docker, GPU optional |
+| Whisper Service | Modal | Serverless GPU, WebSocket support, auto-scaling |
 | OpenAI API | OpenAI Cloud | Pay-per-use |
 | Gmail API | Google Cloud | Free within limits |
 
@@ -975,16 +975,11 @@ OPENAI_API_KEY=sk-xxx
 GMAIL_CLIENT_ID=xxx.apps.googleusercontent.com
 GMAIL_CLIENT_SECRET=GOCSPX-xxx
 
-# Whisper Service
-WHISPER_WS_URL=wss://whisper.voicedform.com
+# Whisper Service (Modal deployment)
+WHISPER_WS_URL=wss://your-workspace--voicedform-whisper-transcribe-websocket.modal.run
 ```
 
-**Whisper Service (.env):**
-```bash
-WHISPER_MODEL=base.en
-PORT=8765
-MAX_CONNECTIONS=50
-```
+**Note**: Whisper service is deployed to Modal. No additional environment variables needed for Whisper as configuration is handled in the Modal deployment script (`whisper-service/whisper_server.py`).
 
 ### 8.3 Deployment Pipeline
 
@@ -1000,17 +995,23 @@ Developer          GitHub          Vercel         Production
     │<───Notification────────────────│                │
 ```
 
-**Whisper Service Deployment:**
+**Whisper Service Deployment (Modal):**
 ```bash
-# Build Docker image
-docker build -t whisper-service .
+# Install Modal CLI
+pip install modal
 
-# Deploy to Railway
-railway up
+# Authenticate with Modal
+modal token new
 
-# Or deploy to Fly.io
-fly deploy
+# Deploy Whisper service
+cd whisper-service
+modal deploy whisper_server.py
+
+# Get WebSocket endpoint URL from deployment output
+# Example: wss://your-workspace--voicedform-whisper-transcribe-websocket.modal.run
 ```
+
+See `/whisper-service/README.md` for detailed configuration, monitoring, and troubleshooting.
 
 ### 8.4 Monitoring & Logging
 
@@ -1019,7 +1020,7 @@ fly deploy
 | Frontend | Vercel Analytics | Core Web Vitals, page views |
 | Backend | Vercel Logs | API errors, response times |
 | Database | Supabase Dashboard | Query performance, connection count |
-| Whisper | Fly.io Logs | Transcription errors, latency |
+| Whisper | Modal Dashboard & Logs | Transcription errors, latency, GPU usage, costs |
 | Errors | Sentry (optional) | Exception tracking |
 
 ---

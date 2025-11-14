@@ -150,8 +150,8 @@ GOOGLE_CLIENT_SECRET=
 # OpenAI
 OPENAI_API_KEY=
 
-# Whisper
-WHISPER_WS_URL=ws://localhost:8765
+# Whisper Service (Modal deployment)
+WHISPER_WS_URL=wss://your-workspace--voicedform-whisper-transcribe-websocket.modal.run
 
 # Gmail API
 GMAIL_CLIENT_ID=
@@ -1092,11 +1092,13 @@ export function TemplateEditor({ initialTemplate }: TemplateEditorProps) {
 
 ### Tasks
 
-#### TASK-3.1: Create Whisper Service
+#### TASK-3.1: Create Whisper Service (Modal Deployment)
 **Priority:** P0
-**Estimated Time:** 3 hours
+**Estimated Time:** 2 hours
 
-**File:** `whisper-service/server.py`
+**Note:** Whisper service is now deployed on Modal.com for serverless GPU-accelerated transcription.
+
+**File:** `whisper-service/whisper_server.py`
 
 ```python
 import asyncio
@@ -1243,52 +1245,66 @@ websockets==11.0
 numpy==1.24.3
 ```
 
+**Note:** The complete Modal implementation is in `/whisper-service/whisper_server.py`. Key features:
+- Serverless GPU deployment (T4)
+- WebSocket endpoint with Starlette
+- Auto-scaling and cold start optimization
+- Built-in health check endpoint
+- See `/whisper-service/README.md` for full implementation details
+
 **Acceptance Criteria:**
+- [ ] Modal deployment script created
 - [ ] Whisper model loads successfully
-- [ ] WebSocket server starts on port 8765
-- [ ] Can receive audio chunks
-- [ ] Returns partial transcripts
-- [ ] Returns final transcript on close
+- [ ] WebSocket server accepts connections
+- [ ] Can receive and process audio chunks
+- [ ] Returns partial and final transcripts
 - [ ] Handles errors gracefully
 - [ ] Logs connections and errors
 
 ---
 
-#### TASK-3.2: Deploy Whisper Service
+#### TASK-3.2: Deploy Whisper Service to Modal
 **Priority:** P0
-**Estimated Time:** 2 hours
+**Estimated Time:** 1 hour
 
 **Steps:**
-1. Build Docker image:
+
+1. Install Modal CLI:
+```bash
+pip install modal
+```
+
+2. Authenticate with Modal:
+```bash
+modal token new
+```
+This opens a browser for authentication. Follow prompts to link your Modal account.
+
+3. Deploy the Whisper service:
 ```bash
 cd whisper-service
-docker build -t whisper-service .
+modal deploy whisper_server.py
 ```
 
-2. Test locally:
+4. Copy the WebSocket endpoint URL from deployment output:
+```
+✓ Created web function transcribe_websocket =>
+  https://your-workspace--voicedform-whisper-transcribe-websocket.modal.run
+```
+
+5. Convert HTTPS to WSS and update `.env.local`:
 ```bash
-docker run -p 8765:8765 whisper-service
+WHISPER_WS_URL=wss://your-workspace--voicedform-whisper-transcribe-websocket.modal.run
 ```
-
-3. Deploy to Railway or Fly.io:
-```bash
-# Railway
-railway init
-railway up
-
-# Or Fly.io
-fly launch
-fly deploy
-```
-
-4. Update `.env.local` with deployed URL
 
 **Acceptance Criteria:**
-- [ ] Docker image builds without errors
-- [ ] Service runs locally
-- [ ] Service deployed to cloud
-- [ ] WebSocket connection works from public internet
-- [ ] URL updated in environment variables
+- [ ] Modal CLI installed and authenticated
+- [ ] Whisper service deploys successfully to Modal
+- [ ] WebSocket endpoint URL obtained from deployment output
+- [ ] Health check endpoint responds (`/health`)
+- [ ] WebSocket connection works from browser
+- [ ] URL updated in `.env.local`
+- [ ] Service visible in Modal dashboard at modal.com/apps
 
 ---
 
