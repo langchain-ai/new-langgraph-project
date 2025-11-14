@@ -1,4 +1,4 @@
-.PHONY: all format lint test tests test_watch integration_tests docker_tests help extended_tests
+.PHONY: all format lint test tests test_watch integration_tests docker_tests help extended_tests whisper_deploy whisper_serve whisper_test
 
 # Default target executed when no arguments are given to make.
 all: help
@@ -53,6 +53,22 @@ spell_fix:
 	codespell --toml pyproject.toml -w
 
 ######################
+# WHISPER MODAL SERVER
+######################
+
+whisper_deploy:
+	modal deploy modal_whisper_server.py
+
+whisper_serve:
+	modal serve modal_whisper_server.py
+
+whisper_test:
+	python -m pytest tests/test_whisper_integration.py -v
+
+whisper_examples:
+	python examples/whisper_usage_examples.py
+
+######################
 # HELP
 ######################
 
@@ -64,4 +80,8 @@ help:
 	@echo 'tests                        - run unit tests'
 	@echo 'test TEST_FILE=<test_file>   - run all tests in file'
 	@echo 'test_watch                   - run unit tests in watch mode'
+	@echo 'whisper_deploy               - deploy Whisper server to Modal (production)'
+	@echo 'whisper_serve                - run Whisper server in development mode'
+	@echo 'whisper_test                 - run Whisper integration tests'
+	@echo 'whisper_examples             - run Whisper usage examples'
 
