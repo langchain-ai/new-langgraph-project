@@ -6,14 +6,15 @@ Returns a predefined response. Replace logic and configuration as needed.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, TypedDict
+from typing import Any, Dict
 
-from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph
+from langgraph.runtime import Runtime
+from typing_extensions import TypedDict
 
 
-class Configuration(TypedDict):
-    """Configurable parameters for the agent.
+class Context(TypedDict):
+    """Context parameters for the agent.
 
     Set these when creating assistants OR when invoking the graph.
     See: https://langchain-ai.github.io/langgraph/cloud/how-tos/configuration_cloud/
@@ -33,21 +34,20 @@ class State:
     changeme: str = "example"
 
 
-async def call_model(state: State, config: RunnableConfig) -> Dict[str, Any]:
+async def call_model(state: State, runtime: Runtime[Context]) -> Dict[str, Any]:
     """Process input and returns output.
 
-    Can use runtime configuration to alter behavior.
+    Can use runtime context to alter behavior.
     """
-    configuration = config["configurable"]
     return {
         "changeme": "output from call_model. "
-        f'Configured with {configuration.get("my_configurable_param")}'
+        f"Configured with {(runtime.context or {}).get('my_configurable_param')}"
     }
 
 
 # Define the graph
 graph = (
-    StateGraph(State, config_schema=Configuration)
+    StateGraph(State, context_schema=Context)
     .add_node(call_model)
     .add_edge("__start__", "call_model")
     .compile(name="New Graph")
