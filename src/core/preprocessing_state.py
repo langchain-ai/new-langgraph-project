@@ -45,6 +45,23 @@ class SubtopicPrompt(TypedDict):
     checker_prompt: str
 
 
+class ExerciseSubtopic(TypedDict):
+    """Per-exercise subtopic definition."""
+
+    id: str
+    topic: str
+    text: str
+
+
+class ExerciseRubric(TypedDict, total=False):
+    """Exercise-level rubric data (regular or debug)."""
+
+    exercise_id: str
+    type: str  # "regular" or "debug"
+    subtopics: List[RubricSubtopic]
+    fixes: List[str]
+
+
 class PreprocessingState(TypedDict, total=False):
     """State object that flows through the preprocessing graph."""
 
@@ -53,8 +70,7 @@ class PreprocessingState(TypedDict, total=False):
     reference_solutions: List[ReferenceSolutionInput]
     debug_exercises: List[str]
     rubric: Dict
-    subtopics: List[RubricSubtopic]
+    exercise_rubrics: Dict[str, ExerciseRubric]
     normalized_reference_solutions: List[ReferenceSolution]
     prompts_by_subtopic: Dict[str, Dict[str, SubtopicPrompt]]
     prompts_by_exercise: Dict[str, Dict[str, SubtopicPrompt]]
-    debug_reference_ids: List[str]

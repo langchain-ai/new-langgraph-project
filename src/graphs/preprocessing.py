@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 try:
     import yaml
@@ -12,6 +12,7 @@ except ImportError:  # pragma: no cover - fallback when PyYAML unavailable
 from langgraph.graph import END, START, StateGraph
 
 from src.core.preprocessing_state import (
+    ExerciseRubric,
     PreprocessingState,
     ReferenceSolution,
     ReferenceSolutionInput,
@@ -28,7 +29,7 @@ def _load_file_text(file_path: str) -> str:
 
 
 def load_rubric_file(state: PreprocessingState) -> PreprocessingState:
-    """Node: parse the rubric YAML and flatten subtopics."""
+    """Node: parse the exercise-specific rubric YAML."""
     rubric_path = state.get("rubric_path")
     if not rubric_path:
         raise ValueError("rubric_path is required in the preprocessing state.")
@@ -39,24 +40,56 @@ def load_rubric_file(state: PreprocessingState) -> PreprocessingState:
         if yaml is not None
         else _fallback_parse_rubric(rubric_text)
     )
-    topics = rubric.get("topics", [])
+    exercises = rubric.get("exercises", [])
+    if not exercises:
+        raise ValueError("rubric must include an 'exercises' list.")
 
-    subtopics: List[RubricSubtopic] = []
-    for topic in topics:
-        topic_id = topic.get("id")
-        topic_name = topic.get("name", "Unnamed Topic")
-        for subtopic in topic.get("subtopics", []):
-            subtopics.append(
-                RubricSubtopic(
-                    subtopic_id=subtopic["id"],
-                    topic_id=topic_id,
-                    topic_name=topic_name,
-                    text=subtopic["text"],
-                )
+    exercise_rubrics: Dict[str, ExerciseRubric] = {}
+
+    for exercise in exercises:
+        exercise_id = exercise.get("id")
+        if not exercise_id:
+            raise ValueError("Each exercise in the rubric must have an id.")
+        exercise_type = exercise.get("type", "regular")
+
+        if exercise_type == "debug":
+            exercise_rubrics[exercise_id] = ExerciseRubric(
+                exercise_id=exercise_id,
+                type="debug",
+                fixes=list(exercise.get("fixes", [])),
             )
+            continue
+
+        raw_subtopics = exercise.get("subtopics", [])[:4]
+        if len(raw_subtopics) < 1:
+            raise ValueError(f"Exercise {exercise_id} is missing subtopics.")
+
+        normalized_subtopics: List[RubricSubtopic] = []
+        for subtopic in raw_subtopics:
+            sub_id = subtopic.get("id")
+            topic_name = subtopic.get("topic", "Unnamed Topic")
+            text = subtopic.get("text", "").strip()
+            if not sub_id or not text:
+                raise ValueError(
+                    f"Exercise {exercise_id} has an invalid subtopic entry."
+                )
+            compound_id = f"{exercise_id}:{sub_id}"
+            normalized = RubricSubtopic(
+                subtopic_id=compound_id,
+                topic_id=sub_id,
+                topic_name=topic_name,
+                text=text,
+            )
+            normalized_subtopics.append(normalized)
+
+        exercise_rubrics[exercise_id] = ExerciseRubric(
+            exercise_id=exercise_id,
+            type="regular",
+            subtopics=normalized_subtopics,
+        )
 
     state["rubric"] = rubric
-    state["subtopics"] = subtopics
+    state["exercise_rubrics"] = exercise_rubrics
     return state
 
 
@@ -102,9 +135,6 @@ def normalize_reference_code(state: PreprocessingState) -> PreprocessingState:
         )
 
     state["normalized_reference_solutions"] = normalized
-    state["debug_reference_ids"] = [
-        ref["solution_id"] for ref in normalized if ref["is_debug"]
-    ]
     return state
 
 
@@ -139,36 +169,83 @@ When you later receive a student submission, decide PASS or FAIL for this subtop
     return prompt
 
 
+def _build_debug_prompt(
+    exercise_id: str, fixes: List[str], reference: ReferenceSolution
+) -> str:
+    """Create a single prompt that checks all required debug fixes."""
+    fixes_text = "\n".join(f"{idx + 1}. {fix}" for idx, fix in enumerate(fixes))
+    reference_label = reference["filename"]
+    reference_code = reference["code"]
+
+    prompt = f"""You are grading a debug exercise. Verify that ALL required fixes are implemented.
+
+Exercise: {exercise_id}
+Required fixes:
+{fixes_text}
+
+Instructions:
+1. Check ONLY whether the student's code implements every required fix above.
+2. Compare to the official reference solution to understand the intended behavior.
+3. Ignore unrelated style or requirements.
+
+Official reference solution ({reference_label}):
+```
+{reference_code}
+```
+
+When you later receive a student submission, decide PASS or FAIL for this debug exercise and explain briefly."""
+    return prompt
+
+
 def build_subtopic_prompts(state: PreprocessingState) -> PreprocessingState:
-    """Node: build prompts for each (subtopic, reference) pair."""
-    subtopics = state.get("subtopics") or []
+    """Node: build prompts for each exercise."""
+    exercise_rubrics = state.get("exercise_rubrics") or {}
     references = state.get("normalized_reference_solutions") or []
-    if not subtopics:
-        raise ValueError("No subtopics were loaded from the rubric.")
+    if not exercise_rubrics:
+        raise ValueError("No exercise rubrics were loaded from the rubric.")
     if not references:
         raise ValueError("No reference solutions are available.")
 
     prompts: Dict[str, Dict[str, SubtopicPrompt]] = {}
     prompts_by_exercise: Dict[str, Dict[str, SubtopicPrompt]] = {}
-    for subtopic in subtopics:
-        subtopic_id = subtopic["subtopic_id"]
-        prompts[subtopic_id] = {}
-        for reference in references:
-            if reference.get("is_debug"):
-                # Skip debug exercises when building prompts, but leave the flag in state.
-                continue
-            checker_prompt = _build_checker_prompt(subtopic, reference)
-            prompts[subtopic_id][reference["solution_id"]] = SubtopicPrompt(
+
+    for reference in references:
+        exercise_id = reference["solution_id"]
+        exercise_rubric = exercise_rubrics.get(exercise_id)
+        if not exercise_rubric:
+            continue
+
+        if exercise_rubric.get("type") == "debug":
+            fixes = exercise_rubric.get("fixes") or []
+            checker_prompt = _build_debug_prompt(exercise_id, fixes, reference)
+            subtopic_id = f"{exercise_id}:debug"
+            prompt_entry = SubtopicPrompt(
                 subtopic_id=subtopic_id,
-                topic_name=subtopic["topic_name"],
-                rubric_text=subtopic["text"],
-                reference_solution_id=reference["solution_id"],
+                topic_name="Debug Fixes",
+                rubric_text="\n".join(fixes),
+                reference_solution_id=exercise_id,
                 reference_filename=reference["filename"],
                 checker_prompt=checker_prompt,
             )
-            prompts_by_exercise.setdefault(reference["solution_id"], {})[
-                subtopic_id
-            ] = prompts[subtopic_id][reference["solution_id"]]
+            prompts.setdefault(subtopic_id, {})[exercise_id] = prompt_entry
+            prompts_by_exercise[exercise_id] = {subtopic_id: prompt_entry}
+            continue
+
+        subtopics = exercise_rubric.get("subtopics") or []
+        prompts_by_exercise[exercise_id] = {}
+        for subtopic in subtopics[:4]:
+            subtopic_id = subtopic["subtopic_id"]
+            checker_prompt = _build_checker_prompt(subtopic, reference)
+            prompt_entry = SubtopicPrompt(
+                subtopic_id=subtopic_id,
+                topic_name=subtopic["topic_name"],
+                rubric_text=subtopic["text"],
+                reference_solution_id=exercise_id,
+                reference_filename=reference["filename"],
+                checker_prompt=checker_prompt,
+            )
+            prompts.setdefault(subtopic_id, {})[exercise_id] = prompt_entry
+            prompts_by_exercise[exercise_id][subtopic_id] = prompt_entry
 
     state["prompts_by_subtopic"] = prompts
     state["prompts_by_exercise"] = prompts_by_exercise
@@ -199,64 +276,14 @@ __all__ = ["preprocessing_graph", "build_preprocessing_graph"]
 # Fallback parsing utilities
 # ---------------------------------------------------------------------------
 
-def _strip_quotes(value: str) -> str:
-    if (
-        len(value) >= 2
-        and ((value[0] == value[-1] == '"') or (value[0] == value[-1] == "'"))
-    ):
-        return value[1:-1]
-    return value
-
 
 def _fallback_parse_rubric(rubric_text: str) -> Dict:
     """Parse the rubric when PyYAML is unavailable."""
-    topics: List[Dict] = []
-    current_topic: Optional[Dict] = None
-    current_subtopic: Optional[Dict] = None
+    import json
 
-    def flush_subtopic() -> None:
-        nonlocal current_subtopic, current_topic
-        if current_topic is not None and current_subtopic is not None:
-            current_topic.setdefault("subtopics", []).append(current_subtopic)
-            current_subtopic = None
-
-    def flush_topic() -> None:
-        nonlocal current_topic
-        if current_topic is not None:
-            flush_subtopic()
-            topics.append(current_topic)
-            current_topic = None
-
-    in_topics_section = False
-    for raw_line in rubric_text.splitlines():
-        line = raw_line.rstrip()
-        stripped = line.strip()
-        if not stripped:
-            continue
-        if stripped.startswith("#"):
-            continue
-        if stripped.startswith("topics:"):
-            in_topics_section = True
-            continue
-        if not in_topics_section:
-            continue
-
-        indent = len(line) - len(stripped)
-
-        if indent == 2 and stripped.startswith("- id:"):
-            flush_topic()
-            topic_id = _strip_quotes(stripped.split(":", 1)[1].strip())
-            current_topic = {"id": topic_id, "name": "", "subtopics": []}
-        elif indent == 4 and stripped.startswith("name:") and current_topic:
-            current_topic["name"] = _strip_quotes(stripped.split(":", 1)[1].strip())
-        elif indent == 4 and stripped.startswith("subtopics:"):
-            flush_subtopic()
-        elif indent == 6 and stripped.startswith("- id:") and current_topic:
-            flush_subtopic()
-            subtopic_id = _strip_quotes(stripped.split(":", 1)[1].strip())
-            current_subtopic = {"id": subtopic_id, "text": ""}
-        elif indent == 8 and stripped.startswith("text:") and current_subtopic:
-            current_subtopic["text"] = _strip_quotes(stripped.split(":", 1)[1].strip())
-
-    flush_topic()
-    return {"topics": topics}
+    try:
+        return json.loads(rubric_text)
+    except Exception as exc:  # pragma: no cover - best-effort fallback
+        raise ValueError(
+            "Failed to parse rubric without PyYAML; please install PyYAML."
+        ) from exc

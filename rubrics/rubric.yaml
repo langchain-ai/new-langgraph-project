@@ -1,38 +1,54 @@
-topics:
-  - id: flow_structure
-    name: "Flow and Structure"
-    subtopics:
-      - id: flow_1
-        text: "The geometric series sum can be computed using either a loop or the closed-form geometric-series formula."
+exercises:
+  - id: Exc1
+    type: debug
+    fixes:
+      - 'Remove the word "int" in the second call to the function.'
+      - "Update the documentation to include a clear, meaningful explanation in English."
 
-  - id: functions
-    name: "Function Decomposition"
+  - id: Exc2
+    type: regular
     subtopics:
-      - id: functions_1
-        text: "Provide a dedicated function that computes the series sum."
-      - id: functions_2
-        text: "The sum should be printed inside the sum-computation function (not in main). A separate print function for this line is unnecessary."
+      - id: flow_structure
+        topic: "Flow and Structure"
+        text: "The series sum can be computed via a loop or via the geometric-series formula."
+      - id: function_decomposition
+        topic: "Function Decomposition"
+        text: "Provide a dedicated function to compute the series sum; print the sum inside that function (not in main). A separate print function for this line is unnecessary."
+      - id: programming_errors
+        topic: "Programming Errors"
+        text: "Guard against division by zero if needed."
+      - id: conventions_docs
+        topic: "Conventions and Documentation"
+        text: "Use meaningful names; declare variables only at the start of a function; initialize every variable; braces on their own lines with consistent indentation; no empty clause in a for loop header; brief English docs for each function (purpose, parameters, return value); declare functions before main and implement them after main."
 
-  - id: errors
-    name: "Programming Errors"
+  - id: Exc3
+    type: regular
     subtopics:
-      - id: errors_1
-        text: "If division by zero is possible, guard against it properly."
+      - id: flow_structure
+        topic: "Flow and Structure"
+        text: "Calculator menu runs correctly; the loop ends only when the user enters 6; re-display the menu after each action except after entering 6."
+      - id: function_decomposition
+        topic: "Function Decomposition"
+        text: "Combine similar calculations into one function when possible (e.g., square area via rectangle formula, hypotenuse via distance formula). Each calculation is implemented in its own function; no calculation is implemented directly inside main."
+      - id: programming_errors
+        topic: "Programming Errors"
+        text: "If using switch-case, include a default. If using pow or sqrt, store the result in a double (matching the function signatures)."
+      - id: conventions_docs
+        topic: "Conventions and Documentation"
+        text: "Use meaningful names; declare variables only at the start of a function; initialize every variable; braces on their own lines with consistent indentation; use constants; no empty clause in a for loop header; brief English docs for each function (purpose, parameters, return value); declare functions before main and implement them after main."
 
-  - id: conventions_docs
-    name: "Conventions and Documentation"
-    subtopics:
-      - id: conv_1
-        text: "Use meaningful names for variables, constants, and functions that follow the naming convention."
-      - id: conv_2
-        text: "Declare all variables only at the beginning of each function."
-      - id: conv_3
-        text: "Initialize every variable."
-      - id: conv_4
-        text: "Opening and closing braces appear on their own lines, and each code block is indented consistently."
-      - id: conv_5
-        text: "Do not leave any clause empty in a for loop header (init, condition, update)."
-      - id: conv_6
-        text: "Document each function briefly in English, describing its purpose, parameters, and return value."
-      - id: conv_7
-        text: "Always declare functions before main, keeping declarations above main and implementations below."
+  - id: Exc4_cyberKioskSolution
+    type: debug
+    fixes:
+      - "In takeOrder, add the missing ampersand (&) in the scanf that reads hasTlush."
+      - "In takeOrder, read sizeChoice with %c instead of %d."
+      - "In takeOrder, add getchar() to clear the buffer between reading typeChoice and sizeChoice (both are char)."
+      - "In takeOrder, the call to printReceipt has the parameters swapped; switch sizeChoice and typeChoice."
+      - "In printReceipt, when the customer has a voucher, add the penalty to the price instead of overwriting the total; replace shakePrice = TLUSH_PENALTY with shakePrice += TLUSH_PENALTY."
+
+  - id: Exc5_doubleFunSolution
+    type: debug
+    fixes:
+      - "welcome and usage do the same thing; keep only one of them."
+      - "Call getNumber from main, not from usage; printing info and requesting input are unrelated."
+      - "Change getNumber from while to do-while so it reads and validates input; update the documentation to state it both reads and validates the number. Doing only one of these two changes loses 2 points; doing neither loses 4."
