@@ -1,0 +1,38 @@
+topics:
+  - id: flow_structure
+    name: "Flow and Structure"
+    subtopics:
+      - id: flow_1
+        text: "The geometric series sum can be computed using either a loop or the closed-form geometric-series formula."
+
+  - id: functions
+    name: "Function Decomposition"
+    subtopics:
+      - id: functions_1
+        text: "Provide a dedicated function that computes the series sum."
+      - id: functions_2
+        text: "The sum should be printed inside the sum-computation function (not in main). A separate print function for this line is unnecessary."
+
+  - id: errors
+    name: "Programming Errors"
+    subtopics:
+      - id: errors_1
+        text: "If division by zero is possible, guard against it properly."
+
+  - id: conventions_docs
+    name: "Conventions and Documentation"
+    subtopics:
+      - id: conv_1
+        text: "Use meaningful names for variables, constants, and functions that follow the naming convention."
+      - id: conv_2
+        text: "Declare all variables only at the beginning of each function."
+      - id: conv_3
+        text: "Initialize every variable."
+      - id: conv_4
+        text: "Opening and closing braces appear on their own lines, and each code block is indented consistently."
+      - id: conv_5
+        text: "Do not leave any clause empty in a for loop header (init, condition, update)."
+      - id: conv_6
+        text: "Document each function briefly in English, describing its purpose, parameters, and return value."
+      - id: conv_7
+        text: "Always declare functions before main, keeping declarations above main and implementations below."

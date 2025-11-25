@@ -1,0 +1,33 @@
+{
+  "rubric_path": "rubrics/rubric.yaml",
+  "metadata": {
+    "exercise_id": "ex08"
+  },
+  "debug_exercises": [
+    "Exc1",
+    "Exc4_cyberKioskSolution",
+    "Exc5_doubleFunSolution"
+  ],
+  "reference_solutions": [
+    {
+      "solution_id": "Exc1",
+      "path": "sample_submission/ex08/Exc1.c"
+    },
+    {
+      "solution_id": "Exc2",
+      "path": "sample_submission/ex08/Exc2.c"
+    },
+    {
+      "solution_id": "Exc3",
+      "path": "sample_submission/ex08/Exc3.c"
+    },
+    {
+      "solution_id": "Exc4_cyberKioskSolution",
+      "path": "sample_submission/ex08/Exc4 - cyberKioskSolution.c"
+    },
+    {
+      "solution_id": "Exc5_doubleFunSolution",
+      "path": "sample_submission/ex08/Exc5 - doubleFunSolution.c"
+    }
+  ]
+}

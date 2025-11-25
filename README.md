@@ -116,6 +116,24 @@ To grade a submission, you will need to:
 2.  Define a rubric YAML file in the `rubrics/` directory for the assignment.
 3.  Update the main application entry point to start the grading process with the path to the submission and the rubric.
 
+## Preprocessing Graph
+
+The preprocessing LangGraph builds checker prompts for every rubric subtopic and every official reference solution.
+
+- Run via LangGraph CLI:
+  ```bash
+  langgraph run src.graphs.preprocessing:preprocessing_graph \
+    --input-file examples/preprocessing_input.json \
+    --output-file preprocessing_output.json
+  ```
+- Or use the convenience script that auto-discovers the `sample_submission/ex08` references:
+  ```bash
+  python3 scripts/run_preprocessing_graph.py --output preprocessing_output.json
+  ```
+
+Both commands emit a JSON blob whose `subtopics` list and `prompts_by_subtopic` dictionary can be consumed by the checking graph later on.
+If you need to exclude debug-style exercises from prompt generation, pass their `solution_id`s via `debug_exercises` in the input JSON or `--debug-solutions` in the helper script; the graph will flag them in the output but skip creating prompts for them.
+
 ## Development Environment
 
 For the Magshimim development team, the EC2 instance is configured as follows:
