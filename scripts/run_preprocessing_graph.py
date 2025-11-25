@@ -17,6 +17,15 @@ from src.core.preprocessing_state import PreprocessingState, ReferenceSolutionIn
 from src.graphs.preprocessing import preprocessing_graph
 
 
+def _normalize_solution_id(raw: str) -> str:
+    """Normalize filenames like 'Exc4 - cyberKioskSolution' to rubric ids."""
+    cleaned = raw.replace(" - ", "_")
+    cleaned = cleaned.replace(" ", "_")
+    while "__" in cleaned:
+        cleaned = cleaned.replace("__", "_")
+    return cleaned
+
+
 def _parse_metadata(pairs: List[str]) -> Dict[str, str]:
     metadata: Dict[str, str] = {}
     for pair in pairs:
@@ -37,7 +46,7 @@ def _gather_reference_solutions(reference_dir: Path) -> List[ReferenceSolutionIn
     for path in sorted(reference_dir.iterdir()):
         if not path.is_file():
             continue
-        solution_id = path.stem.replace(" ", "_")
+        solution_id = _normalize_solution_id(path.stem)
         references.append(
             ReferenceSolutionInput(
                 solution_id=solution_id,
@@ -101,6 +110,10 @@ def main() -> None:
     }
 
     result_state = preprocessing_graph.invoke(initial_state)
+    # Strip internal fields we don't need in the saved output.
+    for key in ["prompts_by_subtopic", "normalized_reference_solutions"]:
+        result_state.pop(key, None)
+
     output_text = json.dumps(result_state, indent=2, ensure_ascii=False)
 
     if args.output:

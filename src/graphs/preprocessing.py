@@ -46,6 +46,8 @@ def load_rubric_file(state: PreprocessingState) -> PreprocessingState:
 
     exercise_rubrics: Dict[str, ExerciseRubric] = {}
 
+    debug_ids = set(state.get("debug_exercises") or [])
+
     for exercise in exercises:
         exercise_id = exercise.get("id")
         if not exercise_id:
@@ -58,6 +60,7 @@ def load_rubric_file(state: PreprocessingState) -> PreprocessingState:
                 type="debug",
                 fixes=list(exercise.get("fixes", [])),
             )
+            debug_ids.add(exercise_id)
             continue
 
         raw_subtopics = exercise.get("subtopics", [])[:4]
@@ -90,6 +93,7 @@ def load_rubric_file(state: PreprocessingState) -> PreprocessingState:
 
     state["rubric"] = rubric
     state["exercise_rubrics"] = exercise_rubrics
+    state["debug_exercises"] = list(sorted(debug_ids))
     return state
 
 
