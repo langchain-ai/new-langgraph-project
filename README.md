@@ -1,26 +1,10 @@
 # MagGradeAI - Automated C Code Grader
 
-Welcome to MagGradeAI, a flexible and extensible framework for automatically grading C programming assignments.
-
-This project uses a multi-agent system, powered by LangGraph, to create a pipeline that analyzes, compiles, tests, and scores student submissions based on a customizable rubric.
-
-## Architecture
-
-The grading process is broken down into a series of agents, each with a specific responsibility. These agents operate sequentially, passing a shared state object that accumulates findings.
-
-1.  **Orchestrator**: The entry point of the grading process. It reads the assignment rubric and determines which checks need to be run.
-
-2.  **Static Analyzer**: Performs static analysis on the student's code to check for style, conventions, and potential issues without executing the code.
-
-3.  **Compiler Runner**: Compiles the student's C code using `gcc`. It reports any compilation errors or warnings.
-
-4.  **Unit Tester**: Executes the compiled program against a set of predefined test cases from the rubric, comparing the actual output to the expected output.
-
-5.  **Rubric Scorer**: The final agent in the pipeline. It aggregates the findings from all previous agents and maps them to the rubric to calculate a final score and generate feedback in Hebrew.
+MagGradeAI is a LangGraph-based pipeline that prepares grading prompts and generates feedback for C programming exercises.
 
 ## Getting Started
 
-This guide will help you set up and run the project on your local machine or on an AWS EC2 instance.
+This guide covers local setup and the streamlined preprocessing + feedback flow.
 
 ### Local Setup
 
@@ -53,10 +37,12 @@ This guide will help you set up and run the project on your local machine or on 
       ```bash
       cp .env.example .env
       ```
-    - Add your API keys (e.g., for a large language model) to the `.env` file:
+    - Set the required keys in `.env`:
       ```
-      # .env
-      API_KEY="YOUR_API_KEY_HERE"
+      OPENAI_API_KEY=your-key
+      LANGCHAIN_API_KEY=your-langsmith-key
+      # optionally:
+      LANGCHAIN_PROJECT=MagGradeAI-Feedback
       ```
 
 ### Cloud Setup (EC2 Ubuntu)
@@ -110,47 +96,62 @@ sudo apt-get install -y python3.10 python3.10-venv python3-pip git gcc
 
 ### Usage
 
-To grade a submission, you will need to:
+To generate feedback:
 
-1.  Place the student's code in a directory.
-2.  Define a rubric YAML file in the `rubrics/` directory for the assignment.
-3.  Update the main application entry point to start the grading process with the path to the submission and the rubric.
+1. Ensure your rubric is defined at `rubrics/rubric.yaml` (see below for format).
+2. Provide preprocessing input JSON (default `examples/preprocessing_input.json`) that lists the references and debug exercises.
+3. Place student `.c` files in a directory (default `sample_submission/ex08`).
+4. Run:
+   ```bash
+   python3 main.py \
+     --preprocess-input examples/preprocessing_input.json \
+     --submission-dir sample_submission/ex08 \
+     --output feedback_output.json
+   ```
+5. The output `feedback_output.json` contains per-exercise aggregated feedback. LangSmith traces are emitted when `LANGCHAIN_TRACING_V2=true`.
 
 ## Preprocessing Graph
 
-The preprocessing LangGraph builds checker prompts for every rubric subtopic and every official reference solution.
+Builds checker prompts per exercise:
 
-- Run via LangGraph CLI:
-  ```bash
-  langgraph run src.graphs.preprocessing:preprocessing_graph \
-    --input-file examples/preprocessing_input.json \
-    --output-file preprocessing_output.json
-  ```
-- Or use the convenience script that auto-discovers the `sample_submission/ex08` references:
+- Usage:
   ```bash
   python3 scripts/run_preprocessing_graph.py --output preprocessing_output.json
   ```
+- Input: `examples/preprocessing_input.json` (rubric path, reference solutions, debug exercises).
+- Output: `prompts_by_exercise` mapping with 4 prompts per regular exercise and 1 prompt per debug exercise that lists required fixes. The script omits intermediate fields from the saved JSON.
 
-Both commands emit a JSON blob whose `subtopics` list and `prompts_by_subtopic` dictionary can be consumed by the checking graph later on.
-If you need to exclude debug-style exercises from prompt generation, pass their `solution_id`s via `debug_exercises` in the input JSON or `--debug-solutions` in the helper script; the graph will flag them in the output but skip creating prompts for them.
+## Feedback Graph
 
-## Development Environment
+Consumes the preprocessing output plus student code to produce final feedback:
 
-For the Magshimim development team, the EC2 instance is configured as follows:
+- Check runners: apply each prompt’s `checker_prompt` to the student code.
+- Validators: retry once if the checker output lacks a clear pass/fail.
+- Aggregator: combines validated results into per-exercise feedback strings.
+- LangSmith tracing is enabled by default (`LANGCHAIN_TRACING_V2=true`).
 
--   **Server Address**: `ubuntu@35.164.240.64`
--   **Virtual Environment Activation**: `source /home/ubuntu/MagGradeAI/MagGradeAIEnv/bin/activate`
+## Rubric Format
 
-## Customization
+`rubrics/rubric.yaml` lists exercises. Regular exercises have four subtopics; debug exercises list required fixes:
 
-### Rubrics
+```yaml
+exercises:
+  - id: Exc2
+    type: regular
+    subtopics:
+      - id: flow_structure
+        topic: "Flow and Structure"
+        text: "The series sum can be computed via a loop or via the geometric-series formula."
+      # ...three more subtopics...
+  - id: Exc4_cyberKioskSolution
+    type: debug
+    fixes:
+      - "In takeOrder, add the missing ampersand (&) in the scanf that reads hasTlush."
+      # ...more fixes...
+```
 
-Rubrics are defined in YAML files within the `rubrics/` directory. See `rubrics/example_assignment.yml` for a template. You can define compilation flags, static analysis rules, and unit test cases.
+## Running on EC2 (optional)
 
-### Agents
-
-Each agent is a Python class in the `src/agents/` directory. You can modify the logic of each agent to use different tools or perform custom checks.
-
-### Tools
-
-Python functions that agents can use (e.g., for running shell commands) are located in the `src/tools/` directory. You can add new tools to extend the capabilities of your agents.
+- SSH: `ssh -i /path/to/key.pem ubuntu@35.164.240.64`
+- Activate venv: `source /home/ubuntu/MagGradeAI/MagGradeAIEnv/bin/activate`
+- Run the same commands as in local usage.
