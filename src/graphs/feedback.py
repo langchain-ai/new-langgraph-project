@@ -73,7 +73,7 @@ def validate_results(state: FeedbackState) -> FeedbackState:
 
 
 def aggregate_feedback(state: FeedbackState) -> FeedbackState:
-    """Aggregate validated checker outputs into per-exercise feedback."""
+    """Aggregate validated checker outputs into per-exercise feedback (Hebrew labels)."""
     aggregated: Dict[str, List[str]] = {}
     for result in state.get("validated_results", []):
         ex = result["exercise_id"]
@@ -82,7 +82,8 @@ def aggregate_feedback(state: FeedbackState) -> FeedbackState:
         )
 
     state["aggregated_feedback"] = {
-        ex: "\n".join(lines) for ex, lines in aggregated.items()
+        ex: f"משוב עבור תרגיל {ex}:\n" + "\n".join(lines)
+        for ex, lines in aggregated.items()
     }
     return state
 
