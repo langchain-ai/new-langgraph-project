@@ -25,6 +25,22 @@ class FeedbackState(TypedDict, total=False):
     aggregated_feedback: Dict[str, str]
 
 
+def _translate_to_hebrew(text: str) -> str:
+    """Translate a response to Hebrew; fall back to original on failure."""
+    if not text.strip():
+        return text
+    model = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    system = (
+        "Translate the following feedback to Hebrew. Preserve technical terms and any "
+        "explicit PASS/FAIL wording."
+    )
+    messages = [SystemMessage(content=system), HumanMessage(content=text)]
+    try:
+        return model.invoke(messages).content
+    except Exception:
+        return text
+
+
 def run_checkers(state: FeedbackState) -> FeedbackState:
     """Invoke checker prompts per exercise/subtopic against the student code."""
     prompts = state.get("prompts_by_exercise") or {}
@@ -66,6 +82,8 @@ def validate_results(state: FeedbackState) -> FeedbackState:
             messages = [SystemMessage(content=prompt), HumanMessage(content=code)]
             rerun = model.invoke(messages).content
             result["response"] = rerun
+        # Always translate the final response to Hebrew.
+        result["response"] = _translate_to_hebrew(result["response"])
         validated.append(result)
 
     state["validated_results"] = validated
@@ -73,7 +91,7 @@ def validate_results(state: FeedbackState) -> FeedbackState:
 
 
 def aggregate_feedback(state: FeedbackState) -> FeedbackState:
-    """Aggregate validated checker outputs into per-exercise feedback (Hebrew labels)."""
+    """מאגד את פלט המאמתים למשוב פר תרגיל (בעברית)."""
     aggregated: Dict[str, List[str]] = {}
     for result in state.get("validated_results", []):
         ex = result["exercise_id"]
