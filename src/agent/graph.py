@@ -1,14 +1,15 @@
 """LangGraph single-node graph template.
 
-Returns a predefined response. Replace logic and configuration as needed.
+Uses Anthropic Claude to respond to messages.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, Dict
+from typing import Annotated
 
+from langchain_anthropic import ChatAnthropic
 from langgraph.graph import StateGraph
+from langgraph.graph.message import add_messages
 from langgraph.runtime import Runtime
 from typing_extensions import TypedDict
 
@@ -20,29 +21,34 @@ class Context(TypedDict):
     See: https://langchain-ai.github.io/langgraph/cloud/how-tos/configuration_cloud/
     """
 
-    my_configurable_param: str
+    model: str
 
 
-@dataclass
-class State:
+class State(TypedDict):
     """Input state for the agent.
 
-    Defines the initial structure of incoming data.
+    Uses the standard messages pattern for chat applications.
     See: https://langchain-ai.github.io/langgraph/concepts/low_level/#state
     """
 
-    changeme: str = "example"
+    messages: Annotated[list, add_messages]
 
 
-async def call_model(state: State, runtime: Runtime[Context]) -> Dict[str, Any]:
-    """Process input and returns output.
+async def call_model(state: State, runtime: Runtime[Context]) -> dict:
+    """Process input messages using Claude and returns the response.
 
-    Can use runtime context to alter behavior.
+    Can use runtime context to configure the model.
     """
-    return {
-        "changeme": "output from call_model. "
-        f"Configured with {(runtime.context or {}).get('my_configurable_param')}"
-    }
+    # Get model name from context or use default
+    model_name = (runtime.context or {}).get("model", "claude-3-5-sonnet-20241022")
+
+    # Initialize the LLM
+    llm = ChatAnthropic(model=model_name)
+
+    # Invoke the model with the messages
+    response = await llm.ainvoke(state["messages"])
+
+    return {"messages": [response]}
 
 
 # Define the graph
