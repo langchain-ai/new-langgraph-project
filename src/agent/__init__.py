@@ -1,8 +1,5 @@
-"""New LangGraph Agent.
+"""Lucart Agents - Multi-agent audit system."""
 
-This module defines a custom graph.
-"""
-
-from agent.graph import graph
+from .graph import graph
 
 __all__ = ["graph"]

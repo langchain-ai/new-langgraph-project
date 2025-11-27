@@ -1,60 +1,30 @@
-"""LangGraph single-node graph template.
+"""Auditor supervisor agent with coder assistant.
 
-Uses Anthropic Claude to respond to messages.
+Multi-agent system for audit workflow automation.
 """
+from langgraph_supervisor import create_supervisor
+from langgraph_supervisor.handoff import create_handoff_tool
 
-from __future__ import annotations
+from .agents.coder import coder_assistant
+from .agents.states import AuditorState
+from .config.settings import claude
+from .utils.prompts import get_auditor_prompt, get_prompt_and_resources
 
-from typing import Annotated
-
-from langchain_anthropic import ChatAnthropic
-from langgraph.graph import StateGraph
-from langgraph.graph.message import add_messages
-from langgraph.runtime import Runtime
-from typing_extensions import TypedDict
-
-
-class Context(TypedDict):
-    """Context parameters for the agent.
-
-    Set these when creating assistants OR when invoking the graph.
-    See: https://langchain-ai.github.io/langgraph/cloud/how-tos/configuration_cloud/
-    """
-
-    model: str
-
-
-class State(TypedDict):
-    """Input state for the agent.
-
-    Uses the standard messages pattern for chat applications.
-    See: https://langchain-ai.github.io/langgraph/concepts/low_level/#state
-    """
-
-    messages: Annotated[list, add_messages]
-
-
-async def call_model(state: State, runtime: Runtime[Context]) -> dict:
-    """Process input messages using Claude and returns the response.
-
-    Can use runtime context to configure the model.
-    """
-    # Get model name from context or use default
-    model_name = (runtime.context or {}).get("model", "claude-3-5-sonnet-20241022")
-
-    # Initialize the LLM
-    llm = ChatAnthropic(model=model_name)
-
-    # Invoke the model with the messages
-    response = await llm.ainvoke(state["messages"])
-
-    return {"messages": [response]}
-
-
-# Define the graph
-graph = (
-    StateGraph(State, context_schema=Context)
-    .add_node(call_model)
-    .add_edge("__start__", "call_model")
-    .compile(name="New Graph")
+# Create handoff tool for agent transfer
+transfer_to_coder = create_handoff_tool(
+    agent_name="coder_assistant",
+    name="transfer_to_coder",
+    description="Transfer to coder agent for database queries",
 )
+
+# Create the auditor supervisor graph
+# Note: LangGraph Server handles persistence automatically
+graph = create_supervisor(
+    model=claude.get_llm(),
+    agents=[coder_assistant],
+    tools=[transfer_to_coder],
+    state_schema=AuditorState,
+    prompt=get_prompt_and_resources(get_auditor_prompt, "auditor.md"),
+    output_mode="full_history",
+    supervisor_name="auditor",
+).compile(name="Auditor Agent")
