@@ -18,16 +18,21 @@ class DatabaseManager:
         return cls._instance
 
     def get_pool(self):
-        """Get or create the connection pool."""
+        """Get or create the connection pool.
+
+        Creates a psycopg2 connection pool using configuration from DatabaseConfig.
+        Automatically handles both local and remote database connections based on
+        the USE_REMOTE_DB environment variable.
+
+        Returns:
+            psycopg2.pool.SimpleConnectionPool: Database connection pool (2-10 connections).
+        """
         if self._pool is None:
+            conn_params = database.get_connection_params()
             self._pool = psycopg2.pool.SimpleConnectionPool(
                 minconn=2,
                 maxconn=10,
-                host=database.host,
-                port=database.port,
-                database=database.database,
-                user=database.username,
-                password=database.password,
+                **conn_params
             )
         return self._pool
 

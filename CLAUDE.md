@@ -21,6 +21,20 @@ pip install -e . "langgraph-cli[inmem]"
 # Setup environment
 cp .env.example .env
 # Edit .env to add ANTHROPIC_API_KEY and database credentials
+
+# For local development, ensure your .env contains:
+# USE_REMOTE_DB=false
+# POSTGRES_HOST=localhost
+# POSTGRES_PORT=5432
+# POSTGRES_DB=lucart
+# POSTGRES_USER=postgres
+# POSTGRES_PASSWORD=postgres
+# POSTGRES_SCHEMA=acr
+
+# For Azure deployment, ensure your .env contains:
+# USE_REMOTE_DB=true
+# DB_URL=postgresql://user:pass@host:port/db?sslmode=require
+# POSTGRES_SCHEMA=acr
 ```
 
 ### Development Server
@@ -88,9 +102,18 @@ The application implements a **supervisor-assistant pattern** using LangChain v1
 
 ### Database Architecture
 
+- **Dual Database Support** (`src/agent/config/settings.py`):
+  - Supports both local PostgreSQL (development) and remote Azure PostgreSQL (production)
+  - Environment flag `USE_REMOTE_DB` selects database mode
+  - Local mode: Uses individual `POSTGRES_*` environment variables
+  - Remote mode: Uses complete connection string from `DB_URL`
+  - Validation in `DatabaseConfig.__post_init__()` ensures correct configuration on startup
+  - `get_connection_params()` method returns appropriate connection parameters for psycopg2
+
 - **Connection Pooling** (`src/agent/utils/database.py`):
   - Singleton `DatabaseManager` class manages psycopg2 connection pool
   - Pool config: 2-10 connections
+  - Automatically handles both local and remote connections based on configuration
   - Provides `get_connection()` and `return_connection()` methods
 
 - **Database Tools** (`src/agent/tools/database.py`):
@@ -98,6 +121,7 @@ The application implements a **supervisor-assistant pattern** using LangChain v1
   - `test_database_connection()`: Verifies connectivity and returns DB version
   - `execute_query()`: Executes SELECT queries only (security constraint)
   - Both tools use @tool decorator for LangGraph integration
+  - Tools are database-agnostic - work seamlessly with both local and remote databases
 
 - **Schema**: Database uses `acr` schema for audit data tables
 
@@ -111,9 +135,14 @@ The application implements a **supervisor-assistant pattern** using LangChain v1
 
 **Required Environment Variables**:
 - `ANTHROPIC_API_KEY`: Claude API key
-- `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_SCHEMA`
+- `USE_REMOTE_DB`: Database mode selection (`true` for Azure, `false` for local, defaults to `false`)
+- **For Local Database** (when `USE_REMOTE_DB=false`):
+  - `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`
+- **For Remote Database** (when `USE_REMOTE_DB=true`):
+  - `DB_URL`: Complete PostgreSQL connection string (e.g., `postgresql://user:pass@host:port/db?sslmode=require`)
+- `POSTGRES_SCHEMA`: Database schema name (defaults to `acr`, used in both modes)
 - Optional: `CLAUDE_MODEL`, `CLAUDE_TEMPERATURE`, `CLAUDE_MAX_TOKENS`
-- Optional: `LANGSMITH_API_KEY`, `LANGSMITH_PROJECT` for tracing
+- Optional: `LANGSMITH_TRACING`, `LANGSMITH_API_KEY`, `LANGSMITH_PROJECT` for tracing
 
 ### Prompt System
 
