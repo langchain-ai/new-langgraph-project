@@ -136,3 +136,77 @@ Each agent is a Python class in the `src/agents/` directory. You can modify the 
 ### Tools
 
 Python functions that agents can use (e.g., for running shell commands) are located in the `src/tools/` directory. You can add new tools to extend the capabilities of your agents.
+
+## Micro-Agent Feedback Architecture (Graph V2)
+
+We have introduced a new, modular architecture for generating feedback, located in `src/graphs/feedback_v2/`. This system uses specialized "Micro-Agents" to analyze specific aspects of student code.
+
+### Core Components
+
+1.  **Strict Protocols (`schemas.py`)**: All agents communicate using defined JSON schemas (`AgentInput`, `AgentOutput`), ensuring consistency.
+2.  **Orchestrator (`orchestrator.py`)**: Manages the flow of data between agents and handles the aggregation of results.
+3.  **Validators (`validators/`)**: Ensure that agent outputs match the expected format before passing them on.
+4.  **Aggregator (`aggregator.py`)**: Compiles specific findings from all agents into a single, unified feedback report.
+
+### Available Agents
+
+-   **Flow & Structure Agent**: Analyzes execution flow, logical structure, and requirement coverage.
+-   **Function Division Agent**: Checks for modularity, function breakdown, and single responsibility.
+-   **Programming Errors Agent**: Detects syntax errors, bugs, and potential runtime issues.
+-   **Conventions & Documentation Agent**: Enforces PEP8, naming conventions, and docstring standards.
+-   **Debug Tasks Agent**: Verifies fixes for specific debugging/refactoring exercises.
+
+### Configuration for Developers
+
+#### Adding a New Agent
+1.  Create a new class in `src/graphs/feedback_v2/agents/` inheriting from `BaseAgent`.
+2.  Implement `name`, `role_description`, and `get_system_prompt`.
+3.  Register the new agent in `src/graphs/feedback_v2/orchestrator.py` list.
+
+#### Verification
+To verify the graph structure and agent flow without making real LLM calls:
+
+```bash
+python3 tests/verify_feedback_v2.py
+```
+
+This script mocks the LLM responses and ensures the graph topology and data validation are correct.
+
+### Running on a Dataset
+
+We provide a utility script to run the feedback graph on a large dataset of student submissions.
+
+#### 1. Prepare Data (JSONL)
+Create a `.jsonl` file where each line is a valid JSON object containing:
+- `code`: The C code submission (string).
+- `exercise_description`: The problem statement (string).
+- `previous_feedback`: (Optional) List of previous feedback strings.
+
+**Example `input.jsonl`:**
+```json
+{"code": "void main() { ... }", "exercise_description": "Print hello world"}
+{"code": "int main() { return 0; }", "exercise_description": "Return 0"}
+```
+
+#### 2. Run the Script
+```bash
+python3 scripts/run_feedback_on_dataset.py input.jsonl output.jsonl
+```
+
+#### 3. Analyze Output
+The `output.jsonl` file will contain a copy of the input records with an added `feedback_result` field:
+
+```json
+{
+  "code": "...",
+  "exercise_description": "...",
+  "feedback_result": {
+    "status": "PASS",
+    "summary": "Passed: 5, Failed: 0, Warnings: 0",
+    "details": [
+      {"agent_name": "Flow Agent", "status": "PASS", "comments": []},
+      ...
+    ]
+  }
+}
+```
