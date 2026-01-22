@@ -19,6 +19,7 @@ from __future__ import annotations
 import logging
 import os
 
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
@@ -52,7 +53,7 @@ def _format_user_message(state: CaseState) -> str:
         parts.append(f"**Chat ID:** {state['chat_id']}")
     
     # Rating
-    rating = state.get("rating", 0)
+    rating = state.get("rating", 1)
     parts.append(f"**Рейтинг:** {'⭐' * rating} ({rating}/5)")
     
     # Customer
@@ -102,12 +103,10 @@ async def agent_node(state: CaseState):
     llm_with_tools = llm.bind_tools(tools)
     
     # Get existing messages or create initial
-    messages = state.get("messages", [])
+    messages = list(state.get("messages", []))
     
     if not messages:
-        # First run - create initial messages
-        from langchain_core.messages import HumanMessage, SystemMessage
-        
+        # First run - create initial messages with system prompt and user request
         system_msg = SystemMessage(content=get_system_prompt())
         user_msg = HumanMessage(content=_format_user_message(state))
         messages = [system_msg, user_msg]
