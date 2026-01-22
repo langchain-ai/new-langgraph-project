@@ -364,12 +364,14 @@ async def human_review_node(state: CaseState) -> dict[str, Any]:
     
     This node interrupts execution and waits for human decision.
     """
+    import json
+    
     pending = state.get("pending_action", {})
     
     logger.info(f"HITL: Requesting approval for {pending.get('action_type')}")
     
     # Interrupt and wait for human decision
-    decision = interrupt({
+    decision_raw = interrupt({
         "type": "approval_request",
         "action_type": pending.get("action_type"),
         "content": pending.get("content"),
@@ -379,10 +381,37 @@ async def human_review_node(state: CaseState) -> dict[str, Any]:
         "options": ["approve", "reject", "edit"],
     })
     
+    # Parse decision - can be string, dict, or JSON string
+    decision: dict[str, Any] = {}
+    
+    if isinstance(decision_raw, dict):
+        decision = decision_raw
+    elif isinstance(decision_raw, str):
+        # Try to parse as JSON first
+        try:
+            parsed = json.loads(decision_raw)
+            if isinstance(parsed, dict):
+                decision = parsed
+            else:
+                decision = {"decision": str(parsed)}
+        except json.JSONDecodeError:
+            # Treat as simple approve/reject string
+            decision = {"decision": decision_raw.strip().lower()}
+    else:
+        decision = {"decision": "rejected", "feedback": "Invalid response format"}
+    
     # Process human decision
     approval_status = decision.get("decision", "rejected")
     feedback = decision.get("feedback", "")
     edited_content = decision.get("edited_content", "")
+    
+    # Normalize approval status
+    if approval_status in ["approve", "approved", "yes", "да", "ok", "ок"]:
+        approval_status = "approved"
+    elif approval_status in ["edit", "edited", "редактировать"]:
+        approval_status = "edit"
+    elif approval_status not in ["rejected"]:
+        approval_status = "rejected"
     
     logger.info(f"HITL: Decision received - {approval_status}")
     
