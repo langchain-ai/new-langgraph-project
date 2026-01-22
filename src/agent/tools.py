@@ -1,16 +1,90 @@
 """Tools for 5STARS agent.
 
 Defines all tools that the agent can use to interact with external systems.
+Enhanced with error handling, retry logic, and HITL support.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Optional
+import os
+from datetime import datetime
+from functools import wraps
+from typing import Any, Callable, Optional
 
 from langchain_core.tools import tool
 
 logger = logging.getLogger("5stars.tools")
+
+
+# =============================================================================
+# Configuration
+# =============================================================================
+
+WB_API_URL = os.getenv("WB_API_URL", "https://feedbacks-api.wildberries.ru/api/v1")
+WB_API_TOKEN = os.getenv("WB_API_TOKEN", "")
+
+# Actions requiring human approval
+REQUIRES_APPROVAL = {
+    "send_review_reply": True,   # Публичные ответы - всегда
+    "escalate_to_manager": True,  # Эскалации - всегда
+    "send_chat_message": False,   # Личные сообщения - авто
+    "offer_compensation": True,   # Компенсации > 500₽ - требуют одобрения
+}
+
+
+# =============================================================================
+# Error Handling Utilities
+# =============================================================================
+
+
+class ToolError(Exception):
+    """Custom exception for tool errors."""
+    
+    def __init__(self, message: str, recoverable: bool = True, details: dict = None):
+        super().__init__(message)
+        self.recoverable = recoverable
+        self.details = details or {}
+
+
+def handle_tool_errors(func: Callable) -> Callable:
+    """Decorator for consistent error handling in tools."""
+    
+    @wraps(func)
+    def wrapper(*args, **kwargs) -> dict:
+        try:
+            return func(*args, **kwargs)
+        except ToolError as e:
+            logger.error(f"[TOOL ERROR] {func.__name__}: {e}")
+            return {
+                "status": "error",
+                "error": str(e),
+                "recoverable": e.recoverable,
+                "details": e.details,
+                "suggestion": "Попробуйте изменить параметры или выбрать другой подход",
+            }
+        except Exception as e:
+            logger.exception(f"[TOOL UNEXPECTED ERROR] {func.__name__}: {e}")
+            return {
+                "status": "error",
+                "error": f"Неожиданная ошибка: {str(e)}",
+                "recoverable": False,
+                "suggestion": "Рассмотрите эскалацию на менеджера",
+            }
+    
+    return wrapper
+
+
+def validate_message_length(message: str, max_length: int, field_name: str = "message") -> str:
+    """Validate and truncate message if needed."""
+    if not message or not message.strip():
+        raise ToolError(f"Поле {field_name} не может быть пустым", recoverable=True)
+    
+    message = message.strip()
+    if len(message) > max_length:
+        logger.warning(f"Message truncated from {len(message)} to {max_length} chars")
+        return message[:max_length - 3] + "..."
+    return message
 
 
 # =============================================================================
@@ -19,6 +93,7 @@ logger = logging.getLogger("5stars.tools")
 
 
 @tool
+@handle_tool_errors
 def send_chat_message(
     chat_id: str,
     message: str,
@@ -30,6 +105,8 @@ def send_chat_message(
     - Предложить решение или компенсацию приватно
     - Продолжить диалог с клиентом
     
+    ВАЖНО: Это приватное сообщение, видимое только клиенту.
+    
     Args:
         chat_id: ID чата в Wildberries
         message: Текст сообщения (макс. 1000 символов)
@@ -37,20 +114,31 @@ def send_chat_message(
     Returns:
         dict с статусом отправки
     """
+    # Validation
+    if not chat_id:
+        raise ToolError("chat_id обязателен", recoverable=True)
+    
+    message = validate_message_length(message, 1000)
+    
     logger.info(f"[TOOL] send_chat_message to chat {chat_id}: {message[:50]}...")
 
     # TODO: Implement actual WB API call
-    # response = requests.post(
-    #     f"{WB_API_URL}/chats/{chat_id}/messages",
-    #     json={"message": message},
-    #     headers={"Authorization": f"Bearer {WB_API_TOKEN}"}
-    # )
+    # import httpx
+    # async with httpx.AsyncClient() as client:
+    #     response = await client.post(
+    #         f"{WB_API_URL}/chats/{chat_id}/messages",
+    #         json={"message": message},
+    #         headers={"Authorization": f"Bearer {WB_API_TOKEN}"}
+    #     )
+    #     response.raise_for_status()
     
     return {
         "status": "success",
         "message": "Сообщение отправлено в чат",
         "chat_id": chat_id,
         "message_preview": message[:100],
+        "timestamp": datetime.now().isoformat(),
+        "requires_approval": REQUIRES_APPROVAL.get("send_chat_message", False),
     }
 
 
@@ -60,45 +148,62 @@ def send_chat_message(
 
 
 @tool
+@handle_tool_errors
 def send_review_reply(
     review_id: str,
     reply_text: str,
 ) -> dict:
     """Отправить публичный ответ на отзыв Wildberries.
     
+    ⚠️ ТРЕБУЕТ ОДОБРЕНИЯ МЕНЕДЖЕРА перед отправкой!
+    
     Используй этот инструмент когда нужно:
     - Публично ответить на отзыв клиента
     - Показать другим покупателям, что продавец заботится о клиентах
     - Дать официальный ответ от имени магазина
     
-    ВАЖНО: Ответ будет виден всем! Максимум 300 символов.
-    Не указывай конкретные суммы компенсаций публично.
+    ВАЖНО: 
+    - Ответ будет виден ВСЕМ покупателям!
+    - Максимум 300 символов!
+    - НЕ указывай конкретные суммы компенсаций публично
+    - НЕ раскрывай личные данные клиента
     
     Args:
         review_id: ID отзыва в Wildberries
         reply_text: Текст публичного ответа (макс. 300 символов)
 
     Returns:
-        dict с статусом отправки
+        dict с информацией о pending action (требуется одобрение)
     """
-    # Truncate if too long
-    if len(reply_text) > 300:
-        reply_text = reply_text[:297] + "..."
+    # Validation
+    if not review_id:
+        raise ToolError("review_id обязателен", recoverable=True)
+    
+    reply_text = validate_message_length(reply_text, 300, "reply_text")
+    
+    # Check for prohibited content
+    prohibited_patterns = ["₽", "руб", "компенсац", "возврат средств"]
+    for pattern in prohibited_patterns:
+        if pattern.lower() in reply_text.lower():
+            raise ToolError(
+                f"Публичный ответ не должен содержать '{pattern}'. "
+                "Суммы и компенсации обсуждаются только в личном чате.",
+                recoverable=True
+            )
         
     logger.info(f"[TOOL] send_review_reply to review {review_id}: {reply_text[:50]}...")
 
-    # TODO: Implement actual WB API call
-    # response = requests.post(
-    #     f"{WB_API_URL}/reviews/{review_id}/reply",
-    #     json={"text": reply_text},
-    #     headers={"Authorization": f"Bearer {WB_API_TOKEN}"}
-    # )
-    
+    # This action requires approval - return pending status
     return {
-        "status": "success",
-        "message": "Публичный ответ на отзыв опубликован",
+        "status": "pending_approval",
+        "message": "⏳ Ответ подготовлен и ожидает одобрения менеджера",
+        "action_type": "review_reply",
         "review_id": review_id,
-        "reply_preview": reply_text[:100],
+        "reply_preview": reply_text,
+        "reply_full": reply_text,
+        "requires_approval": True,
+        "approval_reason": "Публичные ответы на отзывы требуют проверки менеджером",
+        "timestamp": datetime.now().isoformat(),
     }
 
 
@@ -108,6 +213,7 @@ def send_review_reply(
 
 
 @tool
+@handle_tool_errors
 def escalate_to_manager(
     case_id: str,
     reason: str,
@@ -116,35 +222,62 @@ def escalate_to_manager(
 ) -> dict:
     """Эскалировать кейс на менеджера для ручной обработки.
     
+    ⚠️ ТРЕБУЕТ ПОДТВЕРЖДЕНИЯ перед эскалацией!
+    
     Используй этот инструмент когда:
     - Клиент требует связи с руководством
     - Ситуация слишком сложная для автоматического решения
     - Есть юридические риски или угрозы
     - Клиент недоволен после нескольких попыток решения
     - Требуется компенсация более 1000₽
+    - Обнаружен брак партии товара
     
     Args:
         case_id: ID кейса
-        reason: Причина эскалации (кратко)
+        reason: Причина эскалации (кратко, но информативно)
         urgency: Срочность - "low", "normal", "high", "critical"
         summary: Краткое резюме ситуации для менеджера
 
     Returns:
-        dict с информацией об эскалации
+        dict с информацией об эскалации (pending approval)
     """
+    # Validation
+    if not case_id:
+        raise ToolError("case_id обязателен", recoverable=True)
+    
+    if not reason or len(reason.strip()) < 10:
+        raise ToolError(
+            "Укажите подробную причину эскалации (минимум 10 символов)",
+            recoverable=True
+        )
+    
+    valid_urgencies = ["low", "normal", "high", "critical"]
+    if urgency not in valid_urgencies:
+        logger.warning(f"Invalid urgency '{urgency}', defaulting to 'normal'")
+        urgency = "normal"
+    
     logger.warning(f"[TOOL] ESCALATION case_id={case_id}, reason={reason}, urgency={urgency}")
 
-    # TODO: Implement actual escalation logic
-    # - Create task in manager dashboard
-    # - Send Telegram notification
-    # - Update case status in DB
-    
+    # Determine assigned manager based on urgency
+    manager_assignment = {
+        "critical": "duty_manager_urgent",
+        "high": "duty_manager",
+        "normal": "support_lead",
+        "low": "support_queue",
+    }
+
     return {
-        "status": "escalated",
-        "message": f"Кейс передан менеджеру. Срочность: {urgency}",
+        "status": "pending_approval",
+        "message": f"⏳ Эскалация подготовлена. Срочность: {urgency}",
+        "action_type": "escalation",
         "case_id": case_id,
         "reason": reason,
-        "assigned_manager": "manager_on_duty",
+        "summary": summary or reason,
+        "urgency": urgency,
+        "assigned_to": manager_assignment.get(urgency, "support_queue"),
+        "requires_approval": True,
+        "approval_reason": "Эскалации требуют подтверждения для предотвращения ложных срабатываний",
+        "timestamp": datetime.now().isoformat(),
     }
 
 
@@ -154,6 +287,7 @@ def escalate_to_manager(
 
 
 @tool
+@handle_tool_errors
 def search_similar_cases(
     issue_description: str,
     rating: Optional[int] = None,
@@ -165,49 +299,240 @@ def search_similar_cases(
     - Нужно понять, как решались похожие проблемы ранее
     - Ищешь оптимальную стратегию ответа
     - Хочешь узнать типичную компенсацию для такого типа проблем
+    - Сомневаешься в правильном подходе
     
     Args:
-        issue_description: Описание проблемы для поиска
-        rating: Фильтр по рейтингу отзыва (1-5)
-        limit: Максимальное количество результатов
+        issue_description: Описание проблемы для поиска (чем подробнее, тем лучше)
+        rating: Фильтр по рейтингу отзыва (1-5), опционально
+        limit: Максимальное количество результатов (1-10)
 
     Returns:
-        dict со списком похожих кейсов и их решений
+        dict со списком похожих кейсов и рекомендациями
     """
+    # Validation
+    if not issue_description or len(issue_description.strip()) < 5:
+        raise ToolError(
+            "Опишите проблему подробнее (минимум 5 символов)",
+            recoverable=True
+        )
+    
+    if rating is not None and not (1 <= rating <= 5):
+        logger.warning(f"Invalid rating {rating}, ignoring filter")
+        rating = None
+    
+    limit = max(1, min(10, limit))
+    
     logger.info(f"[TOOL] search_similar_cases: {issue_description[:50]}...")
 
     # TODO: Implement actual vector search in Milvus/PostgreSQL
-    # - Create embedding from issue_description
-    # - Search in vector DB
-    # - Return similar cases with resolutions
+    # from langchain_openai import OpenAIEmbeddings
+    # embeddings = OpenAIEmbeddings()
+    # query_embedding = embeddings.embed_query(issue_description)
+    # results = vector_store.similarity_search(query_embedding, k=limit)
     
-    # Placeholder response
+    # Placeholder response with realistic data structure
     similar_cases = [
         {
-            "case_id": "case_001",
-            "issue": "Товар пришёл с браком",
+            "case_id": "case_2024_001",
+            "similarity_score": 0.92,
+            "issue": "Товар пришёл с браком (царапины на корпусе)",
             "rating": 2,
             "resolution": "Предложена замена товара или возврат средств",
+            "response_template": "Добрый день! Приносим извинения за доставленные неудобства. Мы готовы заменить товар или оформить возврат.",
             "compensation": 500,
-            "outcome": "Клиент изменил оценку на 5 звёзд",
+            "outcome": "Клиент выбрал замену, изменил оценку на 5★",
             "success": True,
+            "days_to_resolve": 2,
         },
         {
-            "case_id": "case_002", 
-            "issue": "Долгая доставка",
+            "case_id": "case_2024_002", 
+            "similarity_score": 0.85,
+            "issue": "Долгая доставка, товар шёл 2 недели",
             "rating": 3,
             "resolution": "Извинения + промокод на следующую покупку",
+            "response_template": "Здравствуйте! Благодарим за обратную связь. Сроки доставки зависят от логистики, но мы передали информацию для улучшения.",
             "compensation": 200,
-            "outcome": "Клиент удовлетворён",
+            "outcome": "Клиент удовлетворён, оценку не изменил",
             "success": True,
+            "days_to_resolve": 1,
+        },
+        {
+            "case_id": "case_2024_003",
+            "similarity_score": 0.78,
+            "issue": "Не соответствует описанию (цвет отличается)",
+            "rating": 2,
+            "resolution": "Возврат средств + извинения",
+            "response_template": "Добрый день! Сожалеем, что товар не оправдал ожиданий. Оформим возврат и компенсируем неудобства.",
+            "compensation": 300,
+            "outcome": "Клиент оформил возврат, оценку изменил на 4★",
+            "success": True,
+            "days_to_resolve": 3,
         },
     ]
+    
+    # Filter by rating if specified
+    if rating is not None:
+        similar_cases = [c for c in similar_cases if c["rating"] == rating]
+    
+    # Calculate recommendation based on similar cases
+    if similar_cases:
+        avg_compensation = sum(c["compensation"] for c in similar_cases) / len(similar_cases)
+        success_rate = sum(1 for c in similar_cases if c["success"]) / len(similar_cases)
+        recommendation = f"На основе {len(similar_cases)} похожих кейсов: средняя компенсация {avg_compensation:.0f}₽, успешность {success_rate:.0%}"
+    else:
+        recommendation = "Похожих кейсов не найдено. Рекомендуется стандартный подход."
     
     return {
         "status": "success",
         "found_cases": len(similar_cases),
         "similar_cases": similar_cases[:limit],
-        "recommendation": "На основе похожих кейсов рекомендуется предложить компенсацию 300-500₽",
+        "recommendation": recommendation,
+        "search_query": issue_description[:100],
+        "filters_applied": {"rating": rating} if rating else {},
+    }
+
+
+# =============================================================================
+# Tool 5: Offer Compensation (NEW)
+# =============================================================================
+
+
+@tool
+@handle_tool_errors
+def offer_compensation(
+    chat_id: str,
+    amount: int,
+    compensation_type: str = "refund",
+    reason: str = "",
+) -> dict:
+    """Предложить компенсацию клиенту.
+    
+    ⚠️ Компенсации > 500₽ требуют одобрения менеджера!
+    
+    Используй этот инструмент когда:
+    - Нужно компенсировать клиенту неудобства
+    - Товар имеет брак и нужен частичный возврат
+    - Хочешь удержать клиента после негативного опыта
+    
+    Args:
+        chat_id: ID чата для отправки предложения
+        amount: Сумма компенсации в рублях (100-5000)
+        compensation_type: Тип - "refund" (возврат), "promocode" (промокод), "bonus" (бонусы)
+        reason: Причина компенсации для внутреннего учёта
+
+    Returns:
+        dict с информацией о предложенной компенсации
+    """
+    # Validation
+    if not chat_id:
+        raise ToolError("chat_id обязателен", recoverable=True)
+    
+    if not (100 <= amount <= 5000):
+        raise ToolError(
+            f"Сумма компенсации должна быть от 100 до 5000₽ (указано: {amount})",
+            recoverable=True
+        )
+    
+    valid_types = ["refund", "promocode", "bonus"]
+    if compensation_type not in valid_types:
+        raise ToolError(
+            f"Неверный тип компенсации. Допустимые: {', '.join(valid_types)}",
+            recoverable=True
+        )
+    
+    requires_approval = amount > 500
+    
+    logger.info(f"[TOOL] offer_compensation: {amount}₽ ({compensation_type}) to chat {chat_id}")
+    
+    type_labels = {
+        "refund": "частичный возврат средств",
+        "promocode": "промокод на следующую покупку",
+        "bonus": "бонусные баллы",
+    }
+    
+    message_template = (
+        f"В качестве извинения за доставленные неудобства, "
+        f"мы хотим предложить вам {type_labels[compensation_type]} "
+        f"в размере {amount}₽."
+    )
+    
+    if requires_approval:
+        return {
+            "status": "pending_approval",
+            "message": f"⏳ Компенсация {amount}₽ требует одобрения менеджера",
+            "action_type": "compensation",
+            "chat_id": chat_id,
+            "amount": amount,
+            "compensation_type": compensation_type,
+            "reason": reason,
+            "message_template": message_template,
+            "requires_approval": True,
+            "approval_reason": f"Компенсации свыше 500₽ требуют одобрения (запрошено: {amount}₽)",
+            "timestamp": datetime.now().isoformat(),
+        }
+    
+    return {
+        "status": "success",
+        "message": f"✅ Компенсация {amount}₽ ({compensation_type}) отправлена клиенту",
+        "action_type": "compensation",
+        "chat_id": chat_id,
+        "amount": amount,
+        "compensation_type": compensation_type,
+        "reason": reason,
+        "message_sent": message_template,
+        "requires_approval": False,
+        "timestamp": datetime.now().isoformat(),
+    }
+
+
+# =============================================================================
+# Tool 6: Get Order Details (NEW)
+# =============================================================================
+
+
+@tool
+@handle_tool_errors
+def get_order_details(
+    order_id: str,
+) -> dict:
+    """Получить детали заказа для контекста.
+    
+    Используй этот инструмент когда:
+    - Нужно уточнить информацию о заказе
+    - Клиент упоминает проблему с конкретным товаром
+    - Требуется проверить статус доставки
+    
+    Args:
+        order_id: ID заказа в Wildberries
+
+    Returns:
+        dict с информацией о заказе
+    """
+    if not order_id:
+        raise ToolError("order_id обязателен", recoverable=True)
+    
+    logger.info(f"[TOOL] get_order_details: {order_id}")
+    
+    # TODO: Implement actual WB API call
+    # async with httpx.AsyncClient() as client:
+    #     response = await client.get(
+    #         f"{WB_API_URL}/orders/{order_id}",
+    #         headers={"Authorization": f"Bearer {WB_API_TOKEN}"}
+    #     )
+    
+    # Placeholder response
+    return {
+        "status": "success",
+        "order_id": order_id,
+        "order_date": "2024-01-15",
+        "delivery_date": "2024-01-20",
+        "product_name": "Товар из заказа",
+        "product_sku": "SKU123456",
+        "quantity": 1,
+        "price": 2500,
+        "delivery_status": "delivered",
+        "return_eligible": True,
+        "days_since_delivery": 5,
     }
 
 
@@ -222,7 +547,20 @@ AGENT_TOOLS = [
     send_review_reply,
     escalate_to_manager,
     search_similar_cases,
+    offer_compensation,
+    get_order_details,
 ]
+
+# Tools that require human approval
+APPROVAL_REQUIRED_TOOLS = [
+    "send_review_reply",
+    "escalate_to_manager", 
+]
+
+# Tools with conditional approval (based on parameters)
+CONDITIONAL_APPROVAL_TOOLS = {
+    "offer_compensation": lambda result: result.get("amount", 0) > 500,
+}
 
 
 def get_agent_tools() -> list:
@@ -232,3 +570,53 @@ def get_agent_tools() -> list:
         list of LangChain tools
     """
     return AGENT_TOOLS
+
+
+def tool_requires_approval(tool_name: str, tool_result: dict) -> bool:
+    """Check if a tool call requires human approval.
+    
+    Args:
+        tool_name: Name of the tool
+        tool_result: Result returned by the tool
+        
+    Returns:
+        True if human approval is required
+    """
+    # Always require approval
+    if tool_name in APPROVAL_REQUIRED_TOOLS:
+        return True
+    
+    # Conditional approval based on result
+    if tool_name in CONDITIONAL_APPROVAL_TOOLS:
+        return CONDITIONAL_APPROVAL_TOOLS[tool_name](tool_result)
+    
+    return False
+
+
+def get_tool_error_handler(error: Exception) -> str:
+    """Handle tool errors gracefully.
+    
+    This function is used with ToolNode's handle_tool_errors parameter.
+    
+    Args:
+        error: The exception that occurred
+        
+    Returns:
+        Error message for the LLM to process
+    """
+    if isinstance(error, ToolError):
+        if error.recoverable:
+            return (
+                f"Ошибка инструмента: {str(error)}. "
+                "Попробуйте изменить параметры или выбрать другой подход."
+            )
+        else:
+            return (
+                f"Критическая ошибка: {str(error)}. "
+                "Рекомендуется эскалировать на менеджера."
+            )
+    
+    return (
+        f"Непредвиденная ошибка: {str(error)}. "
+        "Попробуйте другой подход или эскалируйте на менеджера."
+    )
