@@ -102,21 +102,30 @@ async def agent_node(state: CaseState):
     tools = get_agent_tools()
     llm_with_tools = llm.bind_tools(tools)
     
-    # Get existing messages or create initial
-    messages = list(state.get("messages", []))
+    # Get existing messages from state
+    state_messages = list(state.get("messages", []))
     
-    if not messages:
-        # First run - create initial messages with system prompt and user request
-        system_msg = SystemMessage(content=get_system_prompt())
+    if not state_messages:
+        # First run - create initial user message
         user_msg = HumanMessage(content=_format_user_message(state))
-        messages = [system_msg, user_msg]
+        state_messages = [user_msg]
+        # Also return the user message to save it in state
+        messages_to_save = [user_msg]
+    else:
+        messages_to_save = []
+    
+    # Always prepend SystemMessage for each LLM call
+    # This is required for Gemini API which has strict message ordering rules:
+    # function calls must come immediately after user/function-response turns
+    system_msg = SystemMessage(content=get_system_prompt())
+    messages_for_llm = [system_msg] + state_messages
     
     # Invoke LLM
-    response = await llm_with_tools.ainvoke(messages)
+    response = await llm_with_tools.ainvoke(messages_for_llm)
     
     logger.info(f"Agent response: {_extract_text(response.content)[:100]}...")
     
-    return {"messages": [response]}
+    return {"messages": messages_to_save + [response]}
 
 
 def _extract_text(content) -> str:

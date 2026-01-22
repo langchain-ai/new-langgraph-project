@@ -31,8 +31,8 @@ def test_issue_severity_enum() -> None:
 def test_case_state_structure() -> None:
     """Test CaseState TypedDict structure."""
     state: CaseState = {
-        "case_id": 123,
-        "chat_id": "chat_456",
+        "case_id": 1,
+        "chat_id": 1,
         "review_text": "Test review",
         "rating": 2,
         "current_stage": CaseStage.RECEIVED,
@@ -42,7 +42,7 @@ def test_case_state_structure() -> None:
         "execution_results": [],
         "is_managed_by_human": False,
     }
-    assert state["case_id"] == 123
+    assert state["case_id"] == 1
     assert state["rating"] == 2
     assert state["current_stage"] == CaseStage.RECEIVED
 

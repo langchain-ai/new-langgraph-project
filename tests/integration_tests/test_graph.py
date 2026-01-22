@@ -12,7 +12,7 @@ def sample_review_state():
     """Create a sample review state for testing."""
     return {
         "case_id": 1,
-        "chat_id": "test_chat_123",
+        "chat_id": 1,
         "review_text": "Товар пришёл бракованный, качество ужасное. Очень разочарован покупкой.",
         "rating": 2,
         "current_stage": CaseStage.RECEIVED,
