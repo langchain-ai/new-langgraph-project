@@ -33,9 +33,9 @@ logger = logging.getLogger("5stars.graph")
 def _get_llm() -> ChatGoogleGenerativeAI:
     """Get configured LLM instance."""
     return ChatGoogleGenerativeAI(
-        model=os.getenv("MODEL_NAME", "gemini-2.0-flash"),
-        temperature=0.3,
-        max_tokens=4096,
+        model=os.getenv("MODEL_NAME", "gemini-3-flash-preview"),
+        temperature=1,
+        max_tokens=2048,
     )
 
 
