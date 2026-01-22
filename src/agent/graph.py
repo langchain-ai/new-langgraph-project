@@ -196,7 +196,7 @@ async def analyze_case_node(state: CaseState) -> dict[str, Any]:
     """
     logger.info(f"Analyzing case {state.get('case_id')}")
     
-    rating = state.get("rating", 3)
+    rating = state.get("rating", "")
     review_text = state.get("review_text", "").lower()
     cons = state.get("cons", "").lower()
     
@@ -206,11 +206,11 @@ async def analyze_case_node(state: CaseState) -> dict[str, Any]:
     risk_factors = []
     
     # Rating-based urgency
-    if rating <= 1:
+    if rating <= 3:
         urgency = UrgencyLevel.HIGH
-    elif rating <= 2:
+    elif rating == 4:
         urgency = UrgencyLevel.NORMAL
-    elif rating >= 4:
+    elif rating == 5:
         urgency = UrgencyLevel.LOW
     
     # Keyword-based sentiment and risk analysis
