@@ -49,28 +49,35 @@ def _get_secondary_llm() -> ChatGoogleGenerativeAI:
     )
 
 
-def _parse_json_response(response: str | list) -> dict[str, Any]:
-    """Parse JSON from LLM response, handling markdown code blocks.
+def _extract_text_content(content: str | list) -> str:
+    """Extract text from LLM response content.
     
     Args:
-        response: LLM response content - can be string or list of content blocks
+        content: LLM response content - can be string or list of content blocks
+        
+    Returns:
+        Extracted text as string
     """
-    # Handle list response (e.g., from Gemini)
-    if isinstance(response, list):
-        # Extract text from content blocks
+    if isinstance(content, list):
         text_parts = []
-        for item in response:
+        for item in content:
             if isinstance(item, str):
                 text_parts.append(item)
             elif hasattr(item, "text"):
                 text_parts.append(item.text)
             elif isinstance(item, dict) and "text" in item:
                 text_parts.append(item["text"])
-        text = "".join(text_parts)
-    else:
-        text = response
+        return "".join(text_parts)
+    return content
+
+
+def _parse_json_response(response: str | list) -> dict[str, Any]:
+    """Parse JSON from LLM response, handling markdown code blocks.
     
-    text = text.strip()
+    Args:
+        response: LLM response content - can be string or list of content blocks
+    """
+    text = _extract_text_content(response).strip()
     # Remove markdown code blocks if present
     if text.startswith("```"):
         lines = text.split("\n")
@@ -306,7 +313,7 @@ async def dialog_agent_node(state: CaseState) -> dict[str, Any]:
     ]
 
     response = await llm.ainvoke(messages)
-    ai_response = response.content.strip()
+    ai_response = _extract_text_content(response.content).strip()
 
     # Prepare action to send message
     actions: list[ActionItem] = []
