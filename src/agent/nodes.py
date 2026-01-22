@@ -49,9 +49,28 @@ def _get_secondary_llm() -> ChatGoogleGenerativeAI:
     )
 
 
-def _parse_json_response(response: str) -> dict[str, Any]:
-    """Parse JSON from LLM response, handling markdown code blocks."""
-    text = response.strip()
+def _parse_json_response(response: str | list) -> dict[str, Any]:
+    """Parse JSON from LLM response, handling markdown code blocks.
+    
+    Args:
+        response: LLM response content - can be string or list of content blocks
+    """
+    # Handle list response (e.g., from Gemini)
+    if isinstance(response, list):
+        # Extract text from content blocks
+        text_parts = []
+        for item in response:
+            if isinstance(item, str):
+                text_parts.append(item)
+            elif hasattr(item, "text"):
+                text_parts.append(item.text)
+            elif isinstance(item, dict) and "text" in item:
+                text_parts.append(item["text"])
+        text = "".join(text_parts)
+    else:
+        text = response
+    
+    text = text.strip()
     # Remove markdown code blocks if present
     if text.startswith("```"):
         lines = text.split("\n")
