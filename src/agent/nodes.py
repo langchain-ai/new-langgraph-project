@@ -32,20 +32,20 @@ logger = logging.getLogger("5stars.nodes")
 
 
 def _get_primary_llm() -> ChatGoogleGenerativeAI:
-    """Get primary LLM (Gemini Pro) for main actions."""
+    """Get primary LLM for main actions."""
     return ChatGoogleGenerativeAI(
-        model="gemini-2.0-flash",
-        temperature=0.3,
-        max_tokens=2048,
+        model="gemini-3-flash-preview",
+        temperature=0.6,
+        max_tokens=4096,
     )
 
 
 def _get_secondary_llm() -> ChatGoogleGenerativeAI:
-    """Get secondary LLM (Gemini Flash) for validation/analysis."""
+    """Get secondary LLM for validation/analysis."""
     return ChatGoogleGenerativeAI(
-        model="gemini-2.0-flash",
-        temperature=0.1,
-        max_tokens=1024,
+        model="gemini-3-flash-preview",
+        temperature=0.4,
+        max_tokens=4096,
     )
 
 
