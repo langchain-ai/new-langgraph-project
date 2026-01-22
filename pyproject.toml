@@ -1,21 +1,33 @@
 [project]
-name = "agent"
-version = "0.0.1"
-description = "Starter template for making a new agent LangGraph."
+name = "5stars-agent"
+version = "0.1.0"
+description = "5STARS - Multi-agent system for Wildberries review management using LangGraph"
 authors = [
-    { name = "William Fu-Hinthorn", email = "13333726+hinthornw@users.noreply.github.com" },
+    { name = "5STARS Team" },
 ]
 readme = "README.md"
 license = { text = "MIT" }
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
-    "langgraph>=1.0.0",
+    "langgraph>=0.2.0",
+    "langchain>=0.3.0",
+    "langchain-core>=0.3.0",
+    "langchain-google-genai>=2.0.0",
     "python-dotenv>=1.0.1",
+    "pydantic>=2.0.0",
+    "redis>=5.0.0",
+    "asyncpg>=0.29.0",
 ]
 
 
 [project.optional-dependencies]
-dev = ["mypy>=1.11.1", "ruff>=0.6.1"]
+dev = [
+    "mypy>=1.11.1",
+    "ruff>=0.6.1",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+]
 
 [build-system]
 requires = ["setuptools>=73.0.0", "wheel"]
