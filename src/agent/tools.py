@@ -29,7 +29,6 @@ REQUIRES_APPROVAL = {
     "send_review_reply": True,   # Публичные ответы - всегда
     "escalate_to_manager": True,  # Эскалации - всегда
     "send_chat_message": False,   # Личные сообщения - авто
-    "offer_compensation": True,   # Компенсации > 500₽ - требуют одобрения
 }
 
 
@@ -339,7 +338,7 @@ def search_similar_cases(
             "rating": 2,
             "resolution": "Предложена замена товара или возврат средств",
             "response_template": "Добрый день! Приносим извинения за доставленные неудобства. Мы готовы заменить товар или оформить возврат.",
-            "compensation": 500,
+            "compensation": 1000,
             "outcome": "Клиент выбрал замену, изменил оценку на 5★",
             "success": True,
             "days_to_resolve": 2,
@@ -393,100 +392,7 @@ def search_similar_cases(
 
 
 # =============================================================================
-# Tool 5: Offer Compensation (NEW)
-# =============================================================================
-
-
-@tool
-@handle_tool_errors
-def offer_compensation(
-    chat_id: str,
-    amount: int,
-    compensation_type: str = "refund",
-    reason: str = "",
-) -> dict:
-    """Предложить компенсацию клиенту.
-    
-    ⚠️ Компенсации > 500₽ требуют одобрения менеджера!
-    
-    Используй этот инструмент когда:
-    - Нужно компенсировать клиенту неудобства
-    - Товар имеет брак и нужен частичный возврат
-    - Хочешь удержать клиента после негативного опыта
-    
-    Args:
-        chat_id: ID чата для отправки предложения
-        amount: Сумма компенсации в рублях (100-5000)
-        compensation_type: Тип - "refund" (возврат), "promocode" (промокод), "bonus" (бонусы)
-        reason: Причина компенсации для внутреннего учёта
-
-    Returns:
-        dict с информацией о предложенной компенсации
-    """
-    # Validation
-    if not chat_id:
-        raise ToolError("chat_id обязателен", recoverable=True)
-    
-    if not (100 <= amount <= 5000):
-        raise ToolError(
-            f"Сумма компенсации должна быть от 100 до 5000₽ (указано: {amount})",
-            recoverable=True
-        )
-    
-    valid_types = ["refund", "promocode", "bonus"]
-    if compensation_type not in valid_types:
-        raise ToolError(
-            f"Неверный тип компенсации. Допустимые: {', '.join(valid_types)}",
-            recoverable=True
-        )
-    
-    requires_approval = amount > 500
-    
-    logger.info(f"[TOOL] offer_compensation: {amount}₽ ({compensation_type}) to chat {chat_id}")
-    
-    type_labels = {
-        "refund": "частичный возврат средств",
-        "promocode": "промокод на следующую покупку",
-        "bonus": "бонусные баллы",
-    }
-    
-    message_template = (
-        f"В качестве извинения за доставленные неудобства, "
-        f"мы хотим предложить вам {type_labels[compensation_type]} "
-        f"в размере {amount}₽."
-    )
-    
-    if requires_approval:
-        return {
-            "status": "pending_approval",
-            "message": f"⏳ Компенсация {amount}₽ требует одобрения менеджера",
-            "action_type": "compensation",
-            "chat_id": chat_id,
-            "amount": amount,
-            "compensation_type": compensation_type,
-            "reason": reason,
-            "message_template": message_template,
-            "requires_approval": True,
-            "approval_reason": f"Компенсации свыше 500₽ требуют одобрения (запрошено: {amount}₽)",
-            "timestamp": datetime.now().isoformat(),
-        }
-    
-    return {
-        "status": "success",
-        "message": f"✅ Компенсация {amount}₽ ({compensation_type}) отправлена клиенту",
-        "action_type": "compensation",
-        "chat_id": chat_id,
-        "amount": amount,
-        "compensation_type": compensation_type,
-        "reason": reason,
-        "message_sent": message_template,
-        "requires_approval": False,
-        "timestamp": datetime.now().isoformat(),
-    }
-
-
-# =============================================================================
-# Tool 6: Get Order Details (NEW)
+# Tool 5: Get Order Details
 # =============================================================================
 
 
@@ -541,13 +447,13 @@ def get_order_details(
 # =============================================================================
 
 
-# List of all tools available to the agent
+# All tools available to the agent
+# Agent decides which tools to use based on the situation
 AGENT_TOOLS = [
     send_chat_message,
     send_review_reply,
     escalate_to_manager,
     search_similar_cases,
-    offer_compensation,
     get_order_details,
 ]
 
@@ -557,18 +463,16 @@ APPROVAL_REQUIRED_TOOLS = [
     "escalate_to_manager", 
 ]
 
-# Tools with conditional approval (based on parameters)
-CONDITIONAL_APPROVAL_TOOLS = {
-    "offer_compensation": lambda result: result.get("amount", 0) > 500,
-}
-
 
 def get_agent_tools() -> list:
     """Get all tools available to the 5STARS agent.
     
+    All tools are always available. Agent decides which to use based on context.
+    
     Returns:
         list of LangChain tools
     """
+    logger.info(f"[get_agent_tools] Loaded {len(AGENT_TOOLS)} tools")
     return AGENT_TOOLS
 
 

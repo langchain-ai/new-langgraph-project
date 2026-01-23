@@ -50,7 +50,6 @@ class EventLogger:
 
     def log_case_created(
         self,
-        case_id: int,
         rating: int,
         customer: str,
         review_preview: str = "",
@@ -58,19 +57,17 @@ class EventLogger:
         """Log case creation event.
 
         Args:
-            case_id: Case identifier
             rating: Star rating
-            customer: Customer name or ID
+            customer: Customer name
             review_preview: First 50 chars of review
         """
         self.logger.info(
-            f"CASE_CREATED | case_id={case_id} | rating={rating}⭐ | "
+            f"CASE_CREATED | rating={rating}⭐ | "
             f"customer={customer} | preview={review_preview[:50]}..."
         )
 
     def log_stage_transition(
         self,
-        case_id: int,
         from_stage: str,
         to_stage: str,
         reason: Optional[str] = None,
@@ -78,95 +75,78 @@ class EventLogger:
         """Log stage transition event.
 
         Args:
-            case_id: Case identifier
             from_stage: Previous stage
             to_stage: New stage
             reason: Optional reason for transition
         """
-        msg = f"STAGE_TRANSITION | case_id={case_id} | {from_stage} → {to_stage}"
+        msg = f"STAGE_TRANSITION | {from_stage} → {to_stage}"
         if reason:
             msg += f" | reason={reason}"
         self.logger.info(msg)
 
     def log_message_sent(
         self,
-        case_id: int,
-        message_id: str,
         message_length: int,
         channel: str = "wb",
     ) -> None:
         """Log message sent event.
 
         Args:
-            case_id: Case identifier
-            message_id: Message identifier
             message_length: Length of message
             channel: Communication channel (wb, telegram)
         """
         self.logger.info(
-            f"MESSAGE_SENT | case_id={case_id} | channel={channel} | "
-            f"msg_id={message_id} | length={message_length}"
+            f"MESSAGE_SENT | channel={channel} | length={message_length}"
         )
 
     def log_escalation(
         self,
-        case_id: int,
-        manager_id: int,
         reason: str,
         urgency: str = "normal",
     ) -> None:
         """Log escalation event.
 
         Args:
-            case_id: Case identifier
-            manager_id: Assigned manager ID
             reason: Escalation reason
             urgency: Urgency level
         """
         self.logger.warning(
-            f"ESCALATION | case_id={case_id} | manager={manager_id} | "
-            f"urgency={urgency} | reason={reason}"
+            f"ESCALATION | urgency={urgency} | reason={reason}"
         )
 
     def log_compensation_offered(
         self,
-        case_id: int,
         amount: int,
         reason: str,
     ) -> None:
         """Log compensation offer event.
 
         Args:
-            case_id: Case identifier
             amount: Compensation amount in rubles
             reason: Reason for compensation
         """
         self.logger.info(
-            f"COMPENSATION_OFFERED | case_id={case_id} | "
-            f"amount={amount}₽ | reason={reason}"
+            f"COMPENSATION_OFFERED | amount={amount}₽ | reason={reason}"
         )
 
     def log_case_resolved(
         self,
-        case_id: int,
         resolution: str,
         final_rating: Optional[int] = None,
     ) -> None:
         """Log case resolution event.
 
         Args:
-            case_id: Case identifier
             resolution: Resolution type
             final_rating: Final rating if changed
         """
-        msg = f"CASE_RESOLVED | case_id={case_id} | resolution={resolution}"
+        msg = f"CASE_RESOLVED | resolution={resolution}"
         if final_rating is not None:
             msg += f" | final_rating={final_rating}⭐"
         self.logger.info(msg)
 
     def log_error(
         self,
-        case_id: int,
         node: str,
         error: str,
         traceback: Optional[str] = None,
@@ -174,20 +154,18 @@ class EventLogger:
         """Log error event.
 
         Args:
-            case_id: Case identifier
             node: Node where error occurred
             error: Error message
             traceback: Optional traceback
         """
         self.logger.error(
-            f"ERROR | case_id={case_id} | node={node} | error={error}"
+            f"ERROR | node={node} | error={error}"
         )
         if traceback:
             self.logger.debug(f"Traceback: {traceback}")
 
     def log_llm_call(
         self,
-        case_id: int,
         model: str,
         tokens_in: int,
         tokens_out: int,
@@ -196,14 +174,13 @@ class EventLogger:
         """Log LLM call metrics.
 
         Args:
-            case_id: Case identifier
             model: Model name
             tokens_in: Input tokens
             tokens_out: Output tokens
             duration_ms: Call duration in milliseconds
         """
         self.logger.debug(
-            f"LLM_CALL | case_id={case_id} | model={model} | "
+            f"LLM_CALL | model={model} | "
             f"tokens={tokens_in}→{tokens_out} | duration={duration_ms}ms"
         )
 

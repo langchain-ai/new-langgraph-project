@@ -6,29 +6,37 @@ Enhanced ReAct agent with:
 - Error handling with retry policies
 - Streaming support
 
-Graph structure:
+Graph structure (node naming per LangGraph conventions):
     START
       │
-      └─► Analyze Case
+      └─► classify_case (classification node)
              │
-             └─► Agent (with tools)
+             └─► call_model (LLM reasoning node)
                     │
-                    ├─► Tool calls
+                    ├─► execute_tools (tool execution)
                     │       │
-                    │       └─► Check Approval
+                    │       └─► route_after_model
                     │              │
                     │       ┌──────┴──────┐
                     │       ▼             ▼
                     │   [Needs HITL]  [Auto-approve]
                     │       │             │
                     │       ▼             │
-                    │   interrupt()       │
+                    │   human_approval    │
+                    │   (interrupt())     │
                     │       │             │
                     │       └──────┬──────┘
                     │              ▼
-                    │       Back to Agent
+                    │       Back to call_model
                     │
                     └─► END (when done)
+
+Node naming conventions (from LangGraph docs):
+- classify_*: Classification/preprocessing nodes
+- call_model: LLM invocation nodes  
+- execute_tools: Tool execution nodes
+- human_approval: HITL approval nodes
+- route_*: Conditional routing functions
 """
 
 from __future__ import annotations
@@ -39,12 +47,13 @@ from datetime import datetime
 from typing import Any, Literal
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.runnables import RunnableConfig
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 from langgraph.types import Command, interrupt
 
-from agent.prompts import get_system_prompt
+from agent.prompts import get_analysis_prompt, get_system_prompt
 from agent.state import (
     ActionType,
     AgentConfig,
@@ -63,16 +72,58 @@ logger = logging.getLogger("5stars.graph")
 
 
 # =============================================================================
-# Configuration
+# Configuration Helpers
 # =============================================================================
 
 
-def _get_llm() -> ChatGoogleGenerativeAI:
-    """Get configured LLM instance."""
+def _get_default_config() -> dict[str, Any]:
+    """Get default configuration values from AgentConfig model.
+    
+    This ensures consistency between Pydantic model defaults and runtime defaults.
+    """
+    return AgentConfig().model_dump()
+
+
+def _get_config_value(config: RunnableConfig | None, key: str) -> Any:
+    """Extract configuration value from RunnableConfig.
+    
+    Looks in config["configurable"] with fallback to AgentConfig defaults.
+    
+    Args:
+        config: RunnableConfig passed to node
+        key: Configuration key to retrieve
+        
+    Returns:
+        Configuration value or default from AgentConfig
+    """
+    defaults = _get_default_config()
+    
+    if config is None:
+        return defaults.get(key)
+    
+    configurable = config.get("configurable", {})
+    return configurable.get(key, defaults.get(key))
+
+
+def _get_llm(config: RunnableConfig | None = None) -> ChatGoogleGenerativeAI:
+    """Get configured LLM instance based on runtime configuration.
+    
+    Args:
+        config: RunnableConfig with model settings from LangSmith UI
+        
+    Returns:
+        Configured ChatGoogleGenerativeAI instance
+    """
+    model_name = _get_config_value(config, "model_name")
+    temperature = _get_config_value(config, "temperature")
+    max_tokens = _get_config_value(config, "max_tokens")
+    
+    logger.info(f"[LLM] Using model={model_name}, temp={temperature}, max_tokens={max_tokens}")
+    
     return ChatGoogleGenerativeAI(
-        model=os.getenv("MODEL_NAME", "gemini-3-flash-preview"),
-        temperature=1,
-        max_tokens=2048,
+        model=model_name,
+        temperature=temperature,
+        max_tokens=max_tokens,
     )
 
 
@@ -85,14 +136,6 @@ def _format_user_message(state: CaseState) -> str:
     """Format user message from case state."""
     parts = []
     
-    # Case info
-    if state.get("case_id"):
-        parts.append(f"**Case ID:** {state['case_id']}")
-    if state.get("review_id"):
-        parts.append(f"**Review ID:** {state['review_id']}")
-    if state.get("chat_id"):
-        parts.append(f"**Chat ID:** {state['chat_id']}")
-    
     # Rating
     rating = state.get("rating", 1)
     parts.append(f"**Рейтинг:** {'⭐' * rating} ({rating}/5)")
@@ -101,9 +144,7 @@ def _format_user_message(state: CaseState) -> str:
     customer_name = state.get("customer_name", "Покупатель")
     parts.append(f"**Клиент:** {customer_name}")
     
-    # Order context (new)
-    if state.get("order_id"):
-        parts.append(f"**Заказ:** {state['order_id']}")
+    # Product context
     if state.get("product_name"):
         parts.append(f"**Товар:** {state['product_name']}")
     
@@ -160,8 +201,13 @@ def _extract_text(content) -> str:
     return str(content) if content else ""
 
 
-def _check_tool_calls_need_approval(message: AIMessage) -> list[dict]:
+def _check_tool_calls_need_approval(
+    message: AIMessage, 
+    config: RunnableConfig | None = None
+) -> list[dict]:
     """Check which tool calls in the message need approval.
+    
+    Uses max_compensation from config to determine approval threshold.
     
     Returns list of tool calls that need human approval.
     """
@@ -170,16 +216,14 @@ def _check_tool_calls_need_approval(message: AIMessage) -> list[dict]:
     if not hasattr(message, "tool_calls") or not message.tool_calls:
         return needs_approval
     
+    # Get max compensation threshold from config
+    max_compensation = _get_config_value(config, "max_compensation")
+    
     for tool_call in message.tool_calls:
         tool_name = tool_call.get("name", "")
         # Check against our approval rules
         if tool_name in ["send_review_reply", "escalate_to_manager"]:
             needs_approval.append(tool_call)
-        elif tool_name == "offer_compensation":
-            # Check amount for conditional approval
-            args = tool_call.get("args", {})
-            if args.get("amount", 0) > 500:
-                needs_approval.append(tool_call)
     
     return needs_approval
 
@@ -189,79 +233,131 @@ def _check_tool_calls_need_approval(message: AIMessage) -> list[dict]:
 # =============================================================================
 
 
-async def analyze_case_node(state: CaseState) -> dict[str, Any]:
-    """Analyze the case and determine urgency, sentiment, and routing.
+async def classify_case(state: CaseState, config: RunnableConfig) -> dict[str, Any]:
+    """Classify the case using LLM to determine urgency, sentiment, and routing.
     
-    This node runs before the main agent to classify the case.
+    This node runs before the main agent to classify the case using AI analysis
+    based on the review content and context.
+    
+    Node name pattern: classify_* (per LangGraph conventions for classification nodes)
     """
-    logger.info(f"Analyzing case {state.get('case_id')}")
+    import json
     
-    rating = state.get("rating", "")
-    review_text = state.get("review_text", "").lower()
-    cons = state.get("cons", "").lower()
+    logger.info("[classify_case] Classifying case")
     
-    # Determine urgency based on rating and keywords
-    urgency = UrgencyLevel.NORMAL
-    sentiment = SentimentType.NEUTRAL
-    risk_factors = []
+    # Prepare review data for LLM analysis
+    rating = state.get("rating", 0)
+    review_text = state.get("review_text", "")
+    pros = state.get("pros", "")
+    cons = state.get("cons", "")
+    customer_name = state.get("customer_name", "")
+    dialog_history = state.get("dialog_history", [])
     
-    # Rating-based urgency
-    if rating <= 3:
-        urgency = UrgencyLevel.HIGH
-    elif rating == 4:
-        urgency = UrgencyLevel.NORMAL
-    elif rating == 5:
-        urgency = UrgencyLevel.LOW
+    # Get configuration values
+    max_compensation = _get_config_value(config, "max_compensation")
     
-    # Keyword-based sentiment and risk analysis
-    angry_keywords = ["ужас", "кошмар", "обман", "мошенник", "суд", "прокуратур", 
-                      "роспотребнадзор", "жалоб", "верните деньги", "никогда больше"]
-    disappointed_keywords = ["разочарован", "ожидал", "к сожалению", "не рекомендую"]
-    positive_keywords = ["спасибо", "отлично", "рекомендую", "доволен", "супер"]
+    # Format input for analysis
+    analysis_input = f"""ДАННЫЕ ДЛЯ АНАЛИЗА:
+
+**Рейтинг:** {rating}/5 звёзд
+**Клиент:** {customer_name or 'Не указан'}
+
+**Текст отзыва:**
+{review_text or 'Не указан'}
+
+**Достоинства:** {pros or 'Не указаны'}
+**Недостатки:** {cons or 'Не указаны'}
+"""
     
-    combined_text = f"{review_text} {cons}"
+    if dialog_history:
+        history_str = "\n".join([
+            f"- {msg.get('role', '???')}: {msg.get('content', '')}" 
+            for msg in dialog_history
+        ])
+        analysis_input += f"\n**История диалога:**\n{history_str}"
     
-    for keyword in angry_keywords:
-        if keyword in combined_text:
-            sentiment = SentimentType.ANGRY
-            urgency = UrgencyLevel.CRITICAL if rating <= 2 else UrgencyLevel.HIGH
-            risk_factors.append(f"Обнаружено: '{keyword}'")
-            break
+    # Call LLM for analysis (using config for model settings)
+    llm = _get_llm(config)
     
-    if sentiment == SentimentType.NEUTRAL:
-        for keyword in disappointed_keywords:
-            if keyword in combined_text:
-                sentiment = SentimentType.DISAPPOINTED
-                break
+    messages = [
+        SystemMessage(content=get_analysis_prompt()),
+        HumanMessage(content=analysis_input),
+    ]
+    
+    try:
+        response = await llm.ainvoke(messages)
+        response_text = _extract_text(response.content)
         
-        for keyword in positive_keywords:
-            if keyword in combined_text:
-                sentiment = SentimentType.POSITIVE
-                break
-    
-    # Legal risk detection
-    legal_keywords = ["суд", "адвокат", "юрист", "прокуратур", "роспотребнадзор"]
-    for keyword in legal_keywords:
-        if keyword in combined_text:
-            risk_factors.append("Юридические риски")
-            urgency = UrgencyLevel.CRITICAL
-            break
-    
-    # Determine if auto-approvable (only positive reviews with 4-5 stars)
-    auto_approvable = rating >= 4 and sentiment in [SentimentType.POSITIVE, SentimentType.NEUTRAL]
-    
-    # Create analysis
-    analysis = CaseAnalysis(
-        urgency=urgency,
-        sentiment=sentiment,
-        main_issue=cons[:200] if cons else "",
-        requires_compensation=rating <= 2,
-        suggested_compensation=500 if rating <= 2 else (200 if rating == 3 else 0),
-        auto_approvable=auto_approvable,
-        risk_factors=risk_factors,
-    )
-    
-    logger.info(f"Case analysis: urgency={urgency.value}, sentiment={sentiment.value}")
+        # Parse JSON from response (handle markdown code blocks)
+        json_text = response_text
+        if "```json" in json_text:
+            json_text = json_text.split("```json")[1].split("```")[0]
+        elif "```" in json_text:
+            json_text = json_text.split("```")[1].split("```")[0]
+        
+        analysis_data = json.loads(json_text.strip())
+        
+        # Map LLM response to CaseAnalysis
+        urgency_map = {
+            "critical": UrgencyLevel.CRITICAL,
+            "high": UrgencyLevel.HIGH,
+            "normal": UrgencyLevel.NORMAL,
+            "low": UrgencyLevel.LOW,
+        }
+        sentiment_map = {
+            "angry": SentimentType.ANGRY,
+            "disappointed": SentimentType.DISAPPOINTED,
+            "neutral": SentimentType.NEUTRAL,
+            "positive": SentimentType.POSITIVE,
+        }
+        
+        urgency = urgency_map.get(analysis_data.get("urgency", "normal"), UrgencyLevel.NORMAL)
+        sentiment = sentiment_map.get(analysis_data.get("sentiment", "neutral"), SentimentType.NEUTRAL)
+        
+        # Extract main issue
+        main_issue_data = analysis_data.get("main_issue", {})
+        if isinstance(main_issue_data, dict):
+            main_issue = main_issue_data.get("description", "")
+        else:
+            main_issue = str(main_issue_data)
+        
+        # Extract compensation suggestion
+        comp_data = analysis_data.get("suggested_compensation", {})
+        if isinstance(comp_data, dict):
+            suggested_compensation = comp_data.get("amount", 0)
+        else:
+            suggested_compensation = int(comp_data) if comp_data else 0
+        
+        # Create analysis object (apply max_compensation limit from config)
+        analysis = CaseAnalysis(
+            urgency=urgency,
+            sentiment=sentiment,
+            main_issue=main_issue[:200] if main_issue else "",
+            requires_compensation=suggested_compensation > 0,
+            suggested_compensation=min(suggested_compensation, max_compensation),
+            auto_approvable=analysis_data.get("auto_approve", False),
+            risk_factors=analysis_data.get("risk_factors", []),
+        )
+        
+        logger.info(f"[classify_case] Result: urgency={urgency.value}, sentiment={sentiment.value}")
+        
+    except (json.JSONDecodeError, KeyError, TypeError) as e:
+        # Fallback to basic analysis if LLM parsing fails
+        logger.warning(f"[classify_case] LLM analysis parsing failed: {e}, using fallback")
+        
+        urgency = UrgencyLevel.HIGH if rating <= 3 else UrgencyLevel.LOW
+        sentiment = SentimentType.NEUTRAL
+        
+        # Basic fallback analysis
+        analysis = CaseAnalysis(
+            urgency=urgency,
+            sentiment=sentiment,
+            main_issue=cons[:200] if cons else "",
+            requires_compensation=rating <= 2,
+            suggested_compensation=min(500, max_compensation) if rating <= 2 else 0,
+            auto_approvable=False,  # LLM will decide via analysis
+            risk_factors=[],
+        )
     
     return {
         "analysis": analysis.model_dump(),
@@ -269,19 +365,30 @@ async def analyze_case_node(state: CaseState) -> dict[str, Any]:
     }
 
 
-async def agent_node(state: CaseState) -> dict[str, Any]:
-    """Main agent node - analyzes situation and decides on actions.
+async def call_model(state: CaseState, config: RunnableConfig) -> dict[str, Any]:
+    """Call LLM to analyze situation and decide on actions.
     
-    Uses tools to:
-    - Send chat messages
-    - Send public review replies (requires approval)
-    - Escalate to manager (requires approval)
-    - Search similar cases
-    - Offer compensation
+    This is the main reasoning node that invokes the LLM with tools.
+    
+    Node name pattern: call_model (per LangGraph conventions for LLM invocation nodes)
+    
+    Args:
+        state: Current case state
+        config: RunnableConfig with model settings from LangSmith UI
+    
+    Available tools:
+    - send_chat_message: Send private chat message
+    - send_review_reply: Send public review reply (requires HITL approval)
+    - escalate_to_manager: Escalate case (requires HITL approval, also used for compensation payouts)
+    - search_similar_cases: Search knowledge base
+    - get_order_details: Get order information
     """
-    logger.info(f"Agent processing case {state.get('case_id')}")
+    logger.info("[call_model] Processing case")
     
-    llm = _get_llm()
+    # Get LLM with config settings
+    llm = _get_llm(config)
+    
+    # Get all available tools
     tools = get_agent_tools()
     llm_with_tools = llm.bind_tools(tools)
     
@@ -303,23 +410,20 @@ async def agent_node(state: CaseState) -> dict[str, Any]:
     # Invoke LLM
     response = await llm_with_tools.ainvoke(messages_for_llm)
     
-    logger.info(f"Agent response: {_extract_text(response.content)[:100]}...")
+    logger.info(f"[call_model] LLM response: {_extract_text(response.content)[:100]}...")
     
-    # Check if any tool calls need approval
+    # Check if any tool calls need approval (using config for thresholds)
     requires_human = False
     pending_action = None
     
     if hasattr(response, "tool_calls") and response.tool_calls:
-        approval_needed = _check_tool_calls_need_approval(response)
+        approval_needed = _check_tool_calls_need_approval(response, config)
         if approval_needed:
             requires_human = True
             # Store the first action needing approval
             first_action = approval_needed[0]
             pending_action = {
                 "action_type": first_action.get("name"),
-                "target_id": first_action.get("args", {}).get("review_id") or 
-                            first_action.get("args", {}).get("chat_id") or
-                            first_action.get("args", {}).get("case_id", ""),
                 "content": first_action.get("args", {}).get("reply_text") or
                           first_action.get("args", {}).get("message") or
                           first_action.get("args", {}).get("reason", ""),
@@ -334,13 +438,13 @@ async def agent_node(state: CaseState) -> dict[str, Any]:
     }
 
 
-def should_continue(state: CaseState) -> Literal["tools", "human_review", "__end__"]:
-    """Determine the next step after agent node.
+def route_after_model(state: CaseState) -> Literal["execute_tools", "human_approval", "__end__"]:
+    """Route execution after call_model node.
     
-    Routes to:
-    - tools: if there are tool calls that don't need approval
-    - human_review: if there are tool calls that need approval
-    - __end__: if no tool calls (agent is done)
+    Routing logic (per LangGraph conventions for conditional edges):
+    - execute_tools: Tool calls present, no approval needed
+    - human_approval: Tool calls present, requires HITL approval
+    - __end__: No tool calls (agent completed task)
     """
     messages = state.get("messages", [])
     if not messages:
@@ -352,23 +456,31 @@ def should_continue(state: CaseState) -> Literal["tools", "human_review", "__end
     if not hasattr(last_message, "tool_calls") or not last_message.tool_calls:
         return "__end__"
     
-    # Check if human review is needed
+    # Check if human approval is needed
     if state.get("requires_human_review"):
-        return "human_review"
+        return "human_approval"
     
-    return "tools"
+    return "execute_tools"
 
 
-async def human_review_node(state: CaseState) -> dict[str, Any]:
-    """Human-in-the-loop node for approving critical actions.
+async def human_approval(state: CaseState) -> dict[str, Any]:
+    """Human-in-the-loop (HITL) node for approving critical actions.
     
-    This node interrupts execution and waits for human decision.
+    This node uses LangGraph's interrupt() to pause execution and wait for
+    human decision (approve/reject/edit).
+    
+    Node name pattern: human_approval (per LangGraph HITL conventions)
+    
+    Supported decisions:
+    - approve: Execute the pending action as-is
+    - reject: Cancel action, return to call_model with feedback
+    - edit: Modify action content before execution
     """
     import json
     
     pending = state.get("pending_action", {})
     
-    logger.info(f"HITL: Requesting approval for {pending.get('action_type')}")
+    logger.info(f"[human_approval] Requesting approval for action: {pending.get('action_type')}")
     
     # Interrupt and wait for human decision
     decision_raw = interrupt({
@@ -413,7 +525,7 @@ async def human_review_node(state: CaseState) -> dict[str, Any]:
     elif approval_status not in ["rejected"]:
         approval_status = "rejected"
     
-    logger.info(f"HITL: Decision received - {approval_status}")
+    logger.info(f"[human_approval] Decision received: {approval_status}")
     
     messages = list(state.get("messages", []))
     last_message = messages[-1] if messages else None
@@ -460,15 +572,20 @@ async def human_review_node(state: CaseState) -> dict[str, Any]:
     }
 
 
-def after_human_review(state: CaseState) -> Literal["tools", "agent"]:
-    """Route after human review based on decision."""
+def route_after_approval(state: CaseState) -> Literal["execute_tools", "call_model"]:
+    """Route execution after human_approval node.
+    
+    Routing logic:
+    - execute_tools: Approved - proceed with tool execution
+    - call_model: Rejected/edited - return to LLM with feedback
+    """
     status = state.get("approval_status")
     
     if status == "approved":
-        return "tools"
+        return "execute_tools"
     else:
-        # Rejected or edited - go back to agent
-        return "agent"
+        # Rejected or edited - go back to call_model
+        return "call_model"
 
 
 # =============================================================================
@@ -479,6 +596,30 @@ def after_human_review(state: CaseState) -> Literal["tools", "agent"]:
 def create_graph() -> StateGraph:
     """Create the 5STARS agent graph with HITL support.
 
+    Graph structure (per LangGraph conventions):
+    
+        START
+          │
+          └─► classify_case (classification node)
+                 │
+                 └─► call_model (LLM reasoning node)
+                        │
+                        ├─► route_after_model
+                        │       │
+                        │   ┌───┴───────────┬──────────────┐
+                        │   ▼               ▼              ▼
+                        │ [execute_tools] [human_approval] [END]
+                        │       │               │
+                        │       │          route_after_approval
+                        │       │               │
+                        │       │         ┌─────┴─────┐
+                        │       │         ▼           ▼
+                        │       │  [execute_tools] [call_model]
+                        │       │         │
+                        │       └────┬────┘
+                        │            ▼
+                        └─────► call_model (loop)
+    
     Returns:
         Compiled StateGraph ready for execution.
     """
@@ -486,44 +627,65 @@ def create_graph() -> StateGraph:
     tools = get_agent_tools()
     
     # Create ToolNode with error handling
+    # Node name: execute_tools (per LangGraph conventions for tool execution)
     tool_node = ToolNode(tools, handle_tool_errors=get_tool_error_handler)
     
     # Initialize the graph
     workflow = StateGraph(CaseState, config_schema=AgentConfig)
 
-    # Add nodes
-    workflow.add_node("analyze", analyze_case_node)
-    workflow.add_node("agent", agent_node)
-    workflow.add_node("tools", tool_node)
-    workflow.add_node("human_review", human_review_node)
-
-    # Add edges
-    workflow.add_edge(START, "analyze")
-    workflow.add_edge("analyze", "agent")
+    # ==========================================================================
+    # Add Nodes (per LangGraph naming conventions)
+    # ==========================================================================
     
-    # After agent: route based on tool calls and approval needs
+    # Classification node: classify_case
+    # Purpose: AI-based case classification (urgency, sentiment, routing)
+    workflow.add_node("classify_case", classify_case)
+    
+    # LLM reasoning node: call_model  
+    # Purpose: Main agent logic - invoke LLM with tools
+    workflow.add_node("call_model", call_model)
+    
+    # Tool execution node: execute_tools
+    # Purpose: Execute tool calls from LLM response
+    workflow.add_node("execute_tools", tool_node)
+    
+    # HITL approval node: human_approval
+    # Purpose: Pause for human review of critical actions
+    workflow.add_node("human_approval", human_approval)
+
+    # ==========================================================================
+    # Add Edges
+    # ==========================================================================
+    
+    # Entry point: START → classify_case
+    workflow.add_edge(START, "classify_case")
+    
+    # After classification: classify_case → call_model
+    workflow.add_edge("classify_case", "call_model")
+    
+    # After LLM call: conditional routing based on tool calls and approval needs
     workflow.add_conditional_edges(
-        "agent",
-        should_continue,
+        "call_model",
+        route_after_model,
         {
-            "tools": "tools",
-            "human_review": "human_review",
+            "execute_tools": "execute_tools",
+            "human_approval": "human_approval",
             "__end__": END,
         },
     )
     
-    # After human review: route based on decision
+    # After HITL approval: conditional routing based on decision
     workflow.add_conditional_edges(
-        "human_review",
-        after_human_review,
+        "human_approval",
+        route_after_approval,
         {
-            "tools": "tools",
-            "agent": "agent",
+            "execute_tools": "execute_tools",
+            "call_model": "call_model",
         },
     )
     
-    # After tools: back to agent
-    workflow.add_edge("tools", "agent")
+    # After tool execution: loop back to call_model
+    workflow.add_edge("execute_tools", "call_model")
 
     # Compile with interrupt support
     # Note: Checkpointer is automatically provided by LangGraph Server

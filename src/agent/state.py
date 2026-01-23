@@ -23,9 +23,9 @@ class UrgencyLevel(str, Enum):
     """Urgency levels for case prioritization."""
     
     CRITICAL = "critical"  # 1★ + агрессия/юридические угрозы
-    HIGH = "high"          # 1-2★ или повторная жалоба
-    NORMAL = "normal"      # 3★ или стандартная проблема
-    LOW = "low"            # 4-5★ или простой вопрос
+    HIGH = "high"          # 1-3★ или повторная жалоба
+    NORMAL = "normal"      # 4★ или стандартная проблема
+    LOW = "low"            # 5★ или простой вопрос
 
 
 class SentimentType(str, Enum):
@@ -56,7 +56,6 @@ class PendingAction(BaseModel):
     """Action pending human approval."""
     
     action_type: ActionType
-    target_id: str = Field(description="ID чата или отзыва")
     content: str = Field(description="Текст сообщения/ответа")
     metadata: dict[str, Any] = Field(default_factory=dict)
     reason: str = Field(default="", description="Причина действия")
@@ -66,7 +65,6 @@ class CompletedAction(BaseModel):
     """Record of completed action."""
     
     action_type: ActionType
-    target_id: str
     content: str
     status: Literal["success", "failed", "rejected"]
     timestamp: str = ""
@@ -100,26 +98,19 @@ class CaseState(TypedDict, total=False):
     with support for Human-in-the-Loop workflows.
     """
 
-    # === Case Identifiers ===
-    case_id: str
-    chat_id: str
-    review_id: str
-
     # === Review Data ===
     review_text: str
     rating: int  # 1-5 stars
     pros: str  # Достоинства
     cons: str  # Недостатки
     
-    # === Order Context (new) ===
-    order_id: str
+    # === Order Context ===
     product_name: str
     product_sku: str
     order_date: str
 
     # === Customer Context ===
     customer_name: str
-    customer_id: str
     customer_history: list[dict[str, Any]]  # Прошлые обращения клиента
 
     # === Dialog History (for multi-turn conversations) ===
@@ -155,21 +146,65 @@ class CaseState(TypedDict, total=False):
     processing_completed_at: str
 
 
-class AgentConfig(TypedDict, total=False):
-    """Configuration for the agent.
+class AgentConfig(BaseModel):
+    """Configuration for the 5STARS agent (configurable via LangSmith UI).
     
-    Passed via configurable for runtime customization.
+    These settings are passed at runtime through config["configurable"].
+    Each field maps to an input in the LangSmith Assistant configuration panel.
+    
+    Field naming uses snake_case which LangSmith converts to "Title Case" in UI:
+    - model_name → "Model Name"
+    - temperature → "Temperature"  
+    - max_tokens → "Max Tokens"
+    - max_compensation → "Max Compensation"
     """
 
-    # Model settings
-    model_name: str
-    temperature: float
-    max_tokens: int
-
-    # Business rules
-    max_compensation: int
-    min_rating_for_auto: int
+    # ==========================================================================
+    # LLM Settings
+    # ==========================================================================
     
-    # Feature flags
-    enable_search: bool
-    enable_escalation: bool
+    model_name: str = Field(
+        default="gemini-3-flash-preview",
+        description="AI model to use for agent reasoning",
+        json_schema_extra={
+            "langgraph_nodes": ["classify_case", "call_model"],
+        },
+    )
+    temperature: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=2.0,
+        description="LLM temperature (0.0-2.0). Higher values = more creative responses",
+        json_schema_extra={
+            "langgraph_nodes": ["classify_case", "call_model"],
+        },
+    )
+    max_tokens: int = Field(
+        default=2048,
+        ge=256,
+        le=8192,
+        description="Maximum tokens in LLM response",
+        json_schema_extra={
+            "langgraph_nodes": ["classify_case", "call_model"],
+        },
+    )
+
+    # ==========================================================================
+    # Business Rules
+    # ==========================================================================
+    
+    max_compensation: int = Field(
+        default=1000,
+        ge=0,
+        le=10000,
+        description="Maximum auto-approved compensation amount (₽). Higher amounts require HITL approval",
+        json_schema_extra={
+            "langgraph_nodes": ["call_model", "classify_case"],
+        },
+    )
+    
+    class Config:
+        """Pydantic config for AgentConfig."""
+        
+        # Allow population by field name for compatibility
+        populate_by_name = True
