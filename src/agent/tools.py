@@ -24,13 +24,6 @@ logger = logging.getLogger("5stars.tools")
 WB_API_URL = os.getenv("WB_API_URL", "https://feedbacks-api.wildberries.ru/api/v1")
 WB_API_TOKEN = os.getenv("WB_API_TOKEN", "")
 
-# Actions requiring human approval
-REQUIRES_APPROVAL = {
-    "send_review_reply": True,   # Публичные ответы - всегда
-    "escalate_to_manager": True,  # Эскалации - всегда
-    "send_chat_message": False,   # Личные сообщения - авто
-}
-
 
 # =============================================================================
 # Error Handling Utilities
@@ -137,7 +130,6 @@ def send_chat_message(
         "chat_id": chat_id,
         "message_preview": message[:100],
         "timestamp": datetime.now().isoformat(),
-        "requires_approval": REQUIRES_APPROVAL.get("send_chat_message", False),
     }
 
 
@@ -433,7 +425,6 @@ def get_order_details(
         "order_date": "2024-01-15",
         "delivery_date": "2024-01-20",
         "product_name": "Товар из заказа",
-        "product_sku": "SKU123456",
         "quantity": 1,
         "price": 2500,
         "delivery_status": "delivered",
@@ -457,13 +448,6 @@ AGENT_TOOLS = [
     get_order_details,
 ]
 
-# Tools that require human approval
-APPROVAL_REQUIRED_TOOLS = [
-    "send_review_reply",
-    "escalate_to_manager", 
-]
-
-
 def get_agent_tools() -> list:
     """Get all tools available to the 5STARS agent.
     
@@ -474,27 +458,6 @@ def get_agent_tools() -> list:
     """
     logger.info(f"[get_agent_tools] Loaded {len(AGENT_TOOLS)} tools")
     return AGENT_TOOLS
-
-
-def tool_requires_approval(tool_name: str, tool_result: dict) -> bool:
-    """Check if a tool call requires human approval.
-    
-    Args:
-        tool_name: Name of the tool
-        tool_result: Result returned by the tool
-        
-    Returns:
-        True if human approval is required
-    """
-    # Always require approval
-    if tool_name in APPROVAL_REQUIRED_TOOLS:
-        return True
-    
-    # Conditional approval based on result
-    if tool_name in CONDITIONAL_APPROVAL_TOOLS:
-        return CONDITIONAL_APPROVAL_TOOLS[tool_name](tool_result)
-    
-    return False
 
 
 def get_tool_error_handler(error: Exception) -> str:

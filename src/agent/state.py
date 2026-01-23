@@ -1,7 +1,7 @@
 """State definitions for 5STARS agent.
 
-Enhanced state with Human-in-the-Loop support, urgency classification,
-and improved error handling.
+Simplified state with urgency classification and autonomous decision making.
+All decisions are made by AI, with escalation tool for human involvement.
 """
 
 from __future__ import annotations
@@ -52,14 +52,6 @@ class ActionType(str, Enum):
 # =============================================================================
 
 
-class PendingAction(BaseModel):
-    """Action pending human approval."""
-    
-    action_type: ActionType
-    content: str = Field(description="Текст сообщения/ответа")
-    metadata: dict[str, Any] = Field(default_factory=dict)
-    reason: str = Field(default="", description="Причина действия")
-
 
 class CompletedAction(BaseModel):
     """Record of completed action."""
@@ -106,12 +98,10 @@ class CaseState(TypedDict, total=False):
     
     # === Order Context ===
     product_name: str
-    product_sku: str
     order_date: str
 
     # === Customer Context ===
     customer_name: str
-    customer_history: list[dict[str, Any]]  # Прошлые обращения клиента
 
     # === Dialog History (for multi-turn conversations) ===
     dialog_history: list[dict[str, str]]
@@ -119,19 +109,12 @@ class CaseState(TypedDict, total=False):
     # === Agent Messages (LangGraph managed) ===
     messages: Annotated[list, add_messages]
     
-    # === Case Analysis (new) ===
+    # === Case Analysis ===
     analysis: dict[str, Any]  # CaseAnalysis as dict
-
-    # === Human-in-the-Loop (new) ===
-    pending_action: dict[str, Any]  # PendingAction as dict - awaiting approval
-    approval_status: Literal["pending", "approved", "rejected", "edited"] | None
-    approval_feedback: str  # Feedback from human reviewer
-    edited_content: str  # Content edited by human
 
     # === Processing Status ===
     is_resolved: bool
     is_escalated: bool
-    requires_human_review: bool  # Flag for HITL
     
     # === Results ===
     final_response: str
@@ -167,7 +150,7 @@ class AgentConfig(BaseModel):
         default="gemini-3-flash-preview",
         description="AI model to use for agent reasoning",
         json_schema_extra={
-            "langgraph_nodes": ["classify_case", "call_model"],
+            "langgraph_nodes": ["Analysis", "Agent"],
         },
     )
     temperature: float = Field(
@@ -176,7 +159,7 @@ class AgentConfig(BaseModel):
         le=2.0,
         description="LLM temperature (0.0-2.0). Higher values = more creative responses",
         json_schema_extra={
-            "langgraph_nodes": ["classify_case", "call_model"],
+            "langgraph_nodes": ["Analysis", "Agent"],
         },
     )
     max_tokens: int = Field(
@@ -185,7 +168,7 @@ class AgentConfig(BaseModel):
         le=8192,
         description="Maximum tokens in LLM response",
         json_schema_extra={
-            "langgraph_nodes": ["classify_case", "call_model"],
+            "langgraph_nodes": ["Analysis", "Agent"],
         },
     )
 
@@ -197,9 +180,9 @@ class AgentConfig(BaseModel):
         default=1000,
         ge=0,
         le=10000,
-        description="Maximum auto-approved compensation amount (₽). Higher amounts require HITL approval",
+        description="Maximum auto-approved compensation amount (₽)",
         json_schema_extra={
-            "langgraph_nodes": ["call_model", "classify_case"],
+            "langgraph_nodes": ["Agent", "Analysis"],
         },
     )
     

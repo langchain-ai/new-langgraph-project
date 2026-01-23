@@ -1,42 +1,29 @@
 """5STARS LangGraph Agent for Wildberries Review Management.
 
-Enhanced ReAct agent with:
-- Human-in-the-Loop (HITL) for critical actions
+ReAct agent with:
+- Autonomous decision making (AI decides all actions)
+- Escalation tool for human involvement when needed
 - Checkpointing for state persistence
 - Error handling with retry policies
 - Streaming support
 
-Graph structure (node naming per LangGraph conventions):
+Graph structure:
     START
       │
-      └─► classify_case (classification node)
+      └─► Analysis (case classification)
              │
-             └─► call_model (LLM reasoning node)
+             └─► Agent (LLM reasoning)
                     │
-                    ├─► execute_tools (tool execution)
+                    ├─► Tools (tool execution)
                     │       │
-                    │       └─► route_after_model
-                    │              │
-                    │       ┌──────┴──────┐
-                    │       ▼             ▼
-                    │   [Needs HITL]  [Auto-approve]
-                    │       │             │
-                    │       ▼             │
-                    │   human_approval    │
-                    │   (interrupt())     │
-                    │       │             │
-                    │       └──────┬──────┘
-                    │              ▼
-                    │       Back to call_model
+                    │       └─► Agent (loop)
                     │
                     └─► END (when done)
 
-Node naming conventions (from LangGraph docs):
-- classify_*: Classification/preprocessing nodes
-- call_model: LLM invocation nodes  
-- execute_tools: Tool execution nodes
-- human_approval: HITL approval nodes
-- route_*: Conditional routing functions
+Node naming:
+- Analysis: Case analysis and classification
+- Agent: Main LLM reasoning node  
+- Tools: Tool execution node
 """
 
 from __future__ import annotations
@@ -51,7 +38,7 @@ from langchain_core.runnables import RunnableConfig
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
-from langgraph.types import Command, interrupt
+from langgraph.types import Command
 
 from agent.prompts import get_analysis_prompt, get_system_prompt
 from agent.state import (
@@ -65,7 +52,6 @@ from agent.state import (
 from agent.tools import (
     get_agent_tools,
     get_tool_error_handler,
-    tool_requires_approval,
 )
 
 logger = logging.getLogger("5stars.graph")
@@ -201,31 +187,7 @@ def _extract_text(content) -> str:
     return str(content) if content else ""
 
 
-def _check_tool_calls_need_approval(
-    message: AIMessage, 
-    config: RunnableConfig | None = None
-) -> list[dict]:
-    """Check which tool calls in the message need approval.
-    
-    Uses max_compensation from config to determine approval threshold.
-    
-    Returns list of tool calls that need human approval.
-    """
-    needs_approval = []
-    
-    if not hasattr(message, "tool_calls") or not message.tool_calls:
-        return needs_approval
-    
-    # Get max compensation threshold from config
-    max_compensation = _get_config_value(config, "max_compensation")
-    
-    for tool_call in message.tool_calls:
-        tool_name = tool_call.get("name", "")
-        # Check against our approval rules
-        if tool_name in ["send_review_reply", "escalate_to_manager"]:
-            needs_approval.append(tool_call)
-    
-    return needs_approval
+
 
 
 # =============================================================================
@@ -233,17 +195,15 @@ def _check_tool_calls_need_approval(
 # =============================================================================
 
 
-async def classify_case(state: CaseState, config: RunnableConfig) -> dict[str, Any]:
-    """Classify the case using LLM to determine urgency, sentiment, and routing.
+async def analysis_node(state: CaseState, config: RunnableConfig) -> dict[str, Any]:
+    """Analyze the case using LLM to determine urgency, sentiment, and routing.
     
-    This node runs before the main agent to classify the case using AI analysis
+    This node runs before the main agent to analyze the case using AI
     based on the review content and context.
-    
-    Node name pattern: classify_* (per LangGraph conventions for classification nodes)
     """
     import json
     
-    logger.info("[classify_case] Classifying case")
+    logger.info("[Analysis] Analyzing case")
     
     # Prepare review data for LLM analysis
     rating = state.get("rating", 0)
@@ -339,11 +299,11 @@ async def classify_case(state: CaseState, config: RunnableConfig) -> dict[str, A
             risk_factors=analysis_data.get("risk_factors", []),
         )
         
-        logger.info(f"[classify_case] Result: urgency={urgency.value}, sentiment={sentiment.value}")
+        logger.info(f"[Analysis] Result: urgency={urgency.value}, sentiment={sentiment.value}")
         
     except (json.JSONDecodeError, KeyError, TypeError) as e:
         # Fallback to basic analysis if LLM parsing fails
-        logger.warning(f"[classify_case] LLM analysis parsing failed: {e}, using fallback")
+        logger.warning(f"[Analysis] LLM analysis parsing failed: {e}, using fallback")
         
         urgency = UrgencyLevel.HIGH if rating <= 3 else UrgencyLevel.LOW
         sentiment = SentimentType.NEUTRAL
@@ -365,25 +325,21 @@ async def classify_case(state: CaseState, config: RunnableConfig) -> dict[str, A
     }
 
 
-async def call_model(state: CaseState, config: RunnableConfig) -> dict[str, Any]:
-    """Call LLM to analyze situation and decide on actions.
+async def agent_node(state: CaseState, config: RunnableConfig) -> dict[str, Any]:
+    """Main agent reasoning node - invoke LLM with tools.
     
-    This is the main reasoning node that invokes the LLM with tools.
-    
-    Node name pattern: call_model (per LangGraph conventions for LLM invocation nodes)
-    
-    Args:
-        state: Current case state
-        config: RunnableConfig with model settings from LangSmith UI
+    This is the core node where the AI analyzes the situation and decides on actions.
+    All decisions are made autonomously by the AI. If human involvement is needed,
+    the AI should use the escalate_to_manager tool.
     
     Available tools:
     - send_chat_message: Send private chat message
-    - send_review_reply: Send public review reply (requires HITL approval)
-    - escalate_to_manager: Escalate case (requires HITL approval, also used for compensation payouts)
+    - send_review_reply: Send public review reply
+    - escalate_to_manager: Escalate case to human manager
     - search_similar_cases: Search knowledge base
     - get_order_details: Get order information
     """
-    logger.info("[call_model] Processing case")
+    logger.info("[Agent] Processing case")
     
     # Get LLM with config settings
     llm = _get_llm(config)
@@ -410,40 +366,18 @@ async def call_model(state: CaseState, config: RunnableConfig) -> dict[str, Any]
     # Invoke LLM
     response = await llm_with_tools.ainvoke(messages_for_llm)
     
-    logger.info(f"[call_model] LLM response: {_extract_text(response.content)[:100]}...")
-    
-    # Check if any tool calls need approval (using config for thresholds)
-    requires_human = False
-    pending_action = None
-    
-    if hasattr(response, "tool_calls") and response.tool_calls:
-        approval_needed = _check_tool_calls_need_approval(response, config)
-        if approval_needed:
-            requires_human = True
-            # Store the first action needing approval
-            first_action = approval_needed[0]
-            pending_action = {
-                "action_type": first_action.get("name"),
-                "content": first_action.get("args", {}).get("reply_text") or
-                          first_action.get("args", {}).get("message") or
-                          first_action.get("args", {}).get("reason", ""),
-                "metadata": first_action.get("args", {}),
-                "tool_call_id": first_action.get("id"),
-            }
+    logger.info(f"[Agent] LLM response: {_extract_text(response.content)[:100]}...")
     
     return {
         "messages": messages_to_save + [response],
-        "requires_human_review": requires_human,
-        "pending_action": pending_action,
     }
 
 
-def route_after_model(state: CaseState) -> Literal["execute_tools", "human_approval", "__end__"]:
-    """Route execution after call_model node.
+def route_after_agent(state: CaseState) -> Literal["Tools", "__end__"]:
+    """Route execution after Agent node.
     
-    Routing logic (per LangGraph conventions for conditional edges):
-    - execute_tools: Tool calls present, no approval needed
-    - human_approval: Tool calls present, requires HITL approval
+    Simple routing:
+    - Tools: Tool calls present - execute them
     - __end__: No tool calls (agent completed task)
     """
     messages = state.get("messages", [])
@@ -456,136 +390,8 @@ def route_after_model(state: CaseState) -> Literal["execute_tools", "human_appro
     if not hasattr(last_message, "tool_calls") or not last_message.tool_calls:
         return "__end__"
     
-    # Check if human approval is needed
-    if state.get("requires_human_review"):
-        return "human_approval"
-    
-    return "execute_tools"
+    return "Tools"
 
-
-async def human_approval(state: CaseState) -> dict[str, Any]:
-    """Human-in-the-loop (HITL) node for approving critical actions.
-    
-    This node uses LangGraph's interrupt() to pause execution and wait for
-    human decision (approve/reject/edit).
-    
-    Node name pattern: human_approval (per LangGraph HITL conventions)
-    
-    Supported decisions:
-    - approve: Execute the pending action as-is
-    - reject: Cancel action, return to call_model with feedback
-    - edit: Modify action content before execution
-    """
-    import json
-    
-    pending = state.get("pending_action", {})
-    
-    logger.info(f"[human_approval] Requesting approval for action: {pending.get('action_type')}")
-    
-    # Interrupt and wait for human decision
-    decision_raw = interrupt({
-        "type": "approval_request",
-        "action_type": pending.get("action_type"),
-        "content": pending.get("content"),
-        "target_id": pending.get("target_id"),
-        "metadata": pending.get("metadata"),
-        "message": "Требуется одобрение менеджера для выполнения действия",
-        "options": ["approve", "reject", "edit"],
-    })
-    
-    # Parse decision - can be string, dict, or JSON string
-    decision: dict[str, Any] = {}
-    
-    if isinstance(decision_raw, dict):
-        decision = decision_raw
-    elif isinstance(decision_raw, str):
-        # Try to parse as JSON first
-        try:
-            parsed = json.loads(decision_raw)
-            if isinstance(parsed, dict):
-                decision = parsed
-            else:
-                decision = {"decision": str(parsed)}
-        except json.JSONDecodeError:
-            # Treat as simple approve/reject string
-            decision = {"decision": decision_raw.strip().lower()}
-    else:
-        decision = {"decision": "rejected", "feedback": "Invalid response format"}
-    
-    # Process human decision
-    approval_status = decision.get("decision", "rejected")
-    feedback = decision.get("feedback", "")
-    edited_content = decision.get("edited_content", "")
-    
-    # Normalize approval status
-    if approval_status in ["approve", "approved", "yes", "да", "ok", "ок"]:
-        approval_status = "approved"
-    elif approval_status in ["edit", "edited", "редактировать"]:
-        approval_status = "edit"
-    elif approval_status not in ["rejected"]:
-        approval_status = "rejected"
-    
-    logger.info(f"[human_approval] Decision received: {approval_status}")
-    
-    messages = list(state.get("messages", []))
-    last_message = messages[-1] if messages else None
-    
-    if approval_status == "rejected":
-        # Create a tool message indicating rejection
-        if last_message and hasattr(last_message, "tool_calls") and last_message.tool_calls:
-            tool_call_id = pending.get("tool_call_id") or last_message.tool_calls[0].get("id")
-            rejection_msg = ToolMessage(
-                content=f"❌ Действие отклонено менеджером. Причина: {feedback or 'не указана'}. "
-                        "Попробуй другой подход.",
-                tool_call_id=tool_call_id,
-            )
-            return {
-                "messages": [rejection_msg],
-                "approval_status": "rejected",
-                "approval_feedback": feedback,
-                "requires_human_review": False,
-                "pending_action": None,
-            }
-    
-    elif approval_status == "edit":
-        # Manager edited the content - update and proceed
-        if last_message and hasattr(last_message, "tool_calls") and last_message.tool_calls:
-            tool_call_id = pending.get("tool_call_id") or last_message.tool_calls[0].get("id")
-            edit_msg = ToolMessage(
-                content=f"✏️ Контент изменён менеджером. Используй новую версию: {edited_content}",
-                tool_call_id=tool_call_id,
-            )
-            return {
-                "messages": [edit_msg],
-                "approval_status": "edited",
-                "edited_content": edited_content,
-                "approval_feedback": feedback,
-                "requires_human_review": False,
-                "pending_action": None,
-            }
-    
-    # Approved - continue with original action
-    return {
-        "approval_status": "approved",
-        "approval_feedback": feedback,
-        "requires_human_review": False,
-    }
-
-
-def route_after_approval(state: CaseState) -> Literal["execute_tools", "call_model"]:
-    """Route execution after human_approval node.
-    
-    Routing logic:
-    - execute_tools: Approved - proceed with tool execution
-    - call_model: Rejected/edited - return to LLM with feedback
-    """
-    status = state.get("approval_status")
-    
-    if status == "approved":
-        return "execute_tools"
-    else:
-        # Rejected or edited - go back to call_model
-        return "call_model"
 
 
 # =============================================================================
@@ -594,31 +400,21 @@ def route_after_approval(state: CaseState) -> Literal["execute_tools", "call_mod
 
 
 def create_graph() -> StateGraph:
-    """Create the 5STARS agent graph with HITL support.
+    """Create the 5STARS agent graph.
 
-    Graph structure (per LangGraph conventions):
+    Graph structure:
     
         START
           │
-          └─► classify_case (classification node)
+          └─► Analysis (case classification)
                  │
-                 └─► call_model (LLM reasoning node)
+                 └─► Agent (LLM reasoning)
                         │
-                        ├─► route_after_model
+                        ├─► Tools (tool execution)
                         │       │
-                        │   ┌───┴───────────┬──────────────┐
-                        │   ▼               ▼              ▼
-                        │ [execute_tools] [human_approval] [END]
-                        │       │               │
-                        │       │          route_after_approval
-                        │       │               │
-                        │       │         ┌─────┴─────┐
-                        │       │         ▼           ▼
-                        │       │  [execute_tools] [call_model]
-                        │       │         │
-                        │       └────┬────┘
-                        │            ▼
-                        └─────► call_model (loop)
+                        │       └─► Agent (loop)
+                        │
+                        └─► END (when done)
     
     Returns:
         Compiled StateGraph ready for execution.
@@ -627,68 +423,48 @@ def create_graph() -> StateGraph:
     tools = get_agent_tools()
     
     # Create ToolNode with error handling
-    # Node name: execute_tools (per LangGraph conventions for tool execution)
     tool_node = ToolNode(tools, handle_tool_errors=get_tool_error_handler)
     
     # Initialize the graph
     workflow = StateGraph(CaseState, config_schema=AgentConfig)
 
     # ==========================================================================
-    # Add Nodes (per LangGraph naming conventions)
+    # Add Nodes
     # ==========================================================================
     
-    # Classification node: classify_case
-    # Purpose: AI-based case classification (urgency, sentiment, routing)
-    workflow.add_node("classify_case", classify_case)
+    # Analysis node: case analysis and classification
+    workflow.add_node("Analysis", analysis_node)
     
-    # LLM reasoning node: call_model  
-    # Purpose: Main agent logic - invoke LLM with tools
-    workflow.add_node("call_model", call_model)
+    # Agent node: main LLM reasoning with tools
+    workflow.add_node("Agent", agent_node)
     
-    # Tool execution node: execute_tools
-    # Purpose: Execute tool calls from LLM response
-    workflow.add_node("execute_tools", tool_node)
-    
-    # HITL approval node: human_approval
-    # Purpose: Pause for human review of critical actions
-    workflow.add_node("human_approval", human_approval)
+    # Tools node: execute tool calls from Agent
+    workflow.add_node("Tools", tool_node)
 
     # ==========================================================================
     # Add Edges
     # ==========================================================================
     
-    # Entry point: START → classify_case
-    workflow.add_edge(START, "classify_case")
+    # Entry point: START → Analysis
+    workflow.add_edge(START, "Analysis")
     
-    # After classification: classify_case → call_model
-    workflow.add_edge("classify_case", "call_model")
+    # After analysis: Analysis → Agent
+    workflow.add_edge("Analysis", "Agent")
     
-    # After LLM call: conditional routing based on tool calls and approval needs
+    # After Agent: conditional routing
     workflow.add_conditional_edges(
-        "call_model",
-        route_after_model,
+        "Agent",
+        route_after_agent,
         {
-            "execute_tools": "execute_tools",
-            "human_approval": "human_approval",
+            "Tools": "Tools",
             "__end__": END,
         },
     )
     
-    # After HITL approval: conditional routing based on decision
-    workflow.add_conditional_edges(
-        "human_approval",
-        route_after_approval,
-        {
-            "execute_tools": "execute_tools",
-            "call_model": "call_model",
-        },
-    )
-    
-    # After tool execution: loop back to call_model
-    workflow.add_edge("execute_tools", "call_model")
+    # After tool execution: loop back to Agent
+    workflow.add_edge("Tools", "Agent")
 
-    # Compile with interrupt support
-    # Note: Checkpointer is automatically provided by LangGraph Server
+    # Compile
     return workflow.compile()
 
 

@@ -2,7 +2,7 @@
 
 import pytest
 
-from agent import CaseStage, graph, process_case
+from agent import graph
 
 pytestmark = pytest.mark.anyio
 
@@ -11,17 +11,15 @@ pytestmark = pytest.mark.anyio
 def sample_review_state():
     """Create a sample review state for testing."""
     return {
-        "case_id": 1,
-        "chat_id": 1,
         "review_text": "Товар пришёл бракованный, качество ужасное. Очень разочарован покупкой.",
         "rating": 2,
-        "current_stage": CaseStage.RECEIVED,
-        "messages": [],
+        "pros": "",
+        "cons": "Сломался",
+        "product_name": "Тестовый товар",
+        "order_date": "2024-01-15",
+        "customer_name": "Тестовый клиент",
         "dialog_history": [],
-        "actions": [],
-        "execution_results": [],
-        "is_managed_by_human": False,
-        "retry_count": 0,
+        "messages": [],
     }
 
 
@@ -30,9 +28,9 @@ async def test_graph_basic_invocation(sample_review_state) -> None:
     """Test that the graph can be invoked with basic state."""
     res = await graph.ainvoke(sample_review_state)
     assert res is not None
-    # Check that key fields are present
-    assert "next_stage" in res or "current_stage" in res
+    # Check that messages were generated
     assert "messages" in res
+    assert len(res["messages"]) > 0
 
 
 @pytest.mark.langsmith
@@ -44,52 +42,43 @@ async def test_graph_processes_negative_review(sample_review_state) -> None:
     res = await graph.ainvoke(sample_review_state)
 
     assert res is not None
-    # Should have generated some response or escalation
-    assert "ai_response" in res or res.get("should_escalate") is True
+    # Should have analysis and messages
+    assert "analysis" in res
+    assert "messages" in res
 
 
 @pytest.mark.langsmith
-async def test_process_case_convenience_function() -> None:
-    """Test the process_case convenience function."""
-    result = await process_case(
-        case_id=100,
-        review_text="Размер не подошёл, товар маломерит.",
-        rating=3,
-        chat_id="test_chat_456",
-        customer_name="Иван",
-    )
-
-    assert result is not None
-    assert result.get("case_id") == 100
-
-
-@pytest.mark.langsmith
-async def test_graph_with_customer_context(sample_review_state) -> None:
-    """Test graph with customer context."""
-    sample_review_state["customer_context"] = {
-        "customer_id": "cust_789",
-        "customer_name": "Мария",
-        "total_orders": 10,
-        "total_reviews": 5,
-        "average_rating": 4.2,
-    }
+async def test_graph_processes_positive_review(sample_review_state) -> None:
+    """Test graph processing of a positive review."""
+    sample_review_state["rating"] = 5
+    sample_review_state["review_text"] = "Отличный товар! Быстрая доставка, качество супер!"
+    sample_review_state["pros"] = "Качество, доставка"
+    sample_review_state["cons"] = ""
 
     res = await graph.ainvoke(sample_review_state)
 
     assert res is not None
+    assert "analysis" in res
+    assert "messages" in res
+
+
+@pytest.mark.langsmith
+async def test_graph_with_customer_name(sample_review_state) -> None:
+    """Test graph with customer name."""
+    sample_review_state["customer_name"] = "Мария"
+
+    res = await graph.ainvoke(sample_review_state)
+
+    assert res is not None
+    assert "messages" in res
 
 
 @pytest.mark.langsmith
 async def test_graph_with_product_context(sample_review_state) -> None:
     """Test graph with product context."""
-    sample_review_state["product_context"] = {
-        "product_id": "prod_123",
-        "product_name": "Кроссовки спортивные",
-        "category": "Обувь",
-        "price": 3500.0,
-        "seller_id": "seller_456",
-    }
+    sample_review_state["product_name"] = "Кроссовки спортивные"
 
     res = await graph.ainvoke(sample_review_state)
 
     assert res is not None
+    assert "messages" in res
