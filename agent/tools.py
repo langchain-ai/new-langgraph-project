@@ -146,8 +146,6 @@ def send_review_reply(
 ) -> dict:
     """Отправить публичный ответ на отзыв Wildberries.
     
-    ⚠️ ТРЕБУЕТ ОДОБРЕНИЯ МЕНЕДЖЕРА перед отправкой!
-    
     Используй этот инструмент когда нужно:
     - Публично ответить на отзыв клиента
     - Показать другим покупателям, что продавец заботится о клиентах
@@ -164,7 +162,7 @@ def send_review_reply(
         reply_text: Текст публичного ответа (макс. 300 символов)
 
     Returns:
-        dict с информацией о pending action (требуется одобрение)
+        dict с статусом отправки
     """
     # Validation
     if not review_id:
@@ -184,53 +182,59 @@ def send_review_reply(
         
     logger.info(f"[TOOL] send_review_reply to review {review_id}: {reply_text[:50]}...")
 
-    # This action requires approval - return pending status
+    # TODO: Implement actual WB API call
+    # import httpx
+    # async with httpx.AsyncClient() as client:
+    #     response = await client.post(
+    #         f"{WB_API_URL}/feedbacks/{review_id}/reply",
+    #         json={"text": reply_text},
+    #         headers={"Authorization": f"Bearer {WB_API_TOKEN}"}
+    #     )
+    #     response.raise_for_status()
+    
     return {
-        "status": "pending_approval",
-        "message": "⏳ Ответ подготовлен и ожидает одобрения менеджера",
+        "status": "success",
+        "message": "✅ Публичный ответ на отзыв отправлен",
         "action_type": "review_reply",
         "review_id": review_id,
-        "reply_preview": reply_text,
-        "reply_full": reply_text,
-        "requires_approval": True,
-        "approval_reason": "Публичные ответы на отзывы требуют проверки менеджером",
+        "reply_text": reply_text,
         "timestamp": datetime.now().isoformat(),
     }
 
 
 # =============================================================================
-# Tool 3: Escalate to Manager
+# Tool 3: Call the Human (передача кейса человеку)
 # =============================================================================
 
 
 @tool
 @handle_tool_errors
-def escalate_to_manager(
+def call_the_human(
     case_id: str,
     reason: str,
-    urgency: str = "normal",
+    action_required: str = "review",
+    compensation_amount: int = 0,
     summary: str = "",
 ) -> dict:
-    """Эскалировать кейс на менеджера для ручной обработки.
-    
-    ⚠️ ТРЕБУЕТ ПОДТВЕРЖДЕНИЯ перед эскалацией!
+    """Передать кейс человеку-менеджеру для дальнейшей обработки.
     
     Используй этот инструмент когда:
-    - Клиент требует связи с руководством
+    - Клиент согласился на компенсацию → менеджер выплатит и закроет кейс
     - Ситуация слишком сложная для автоматического решения
+    - Клиент требует связи с руководством/живым человеком
     - Есть юридические риски или угрозы
     - Клиент недоволен после нескольких попыток решения
-    - Требуется компенсация более 1000₽
-    - Обнаружен брак партии товара
+    - Требуется нестандартное решение
     
     Args:
         case_id: ID кейса
-        reason: Причина эскалации (кратко, но информативно)
-        urgency: Срочность - "low", "normal", "high", "critical"
-        summary: Краткое резюме ситуации для менеджера
+        reason: Причина передачи человеку (кратко, но информативно)
+        action_required: Требуемое действие - "compensation" (выплата), "review" (анализ), "escalation" (эскалация руководству)
+        compensation_amount: Сумма компенсации в рублях (если action_required="compensation")
+        summary: Краткое резюме ситуации и рекомендации для менеджера
 
     Returns:
-        dict с информацией об эскалации (pending approval)
+        dict с информацией о передаче кейса
     """
     # Validation
     if not case_id:
@@ -238,36 +242,40 @@ def escalate_to_manager(
     
     if not reason or len(reason.strip()) < 10:
         raise ToolError(
-            "Укажите подробную причину эскалации (минимум 10 символов)",
+            "Укажите подробную причину передачи (минимум 10 символов)",
             recoverable=True
         )
     
-    valid_urgencies = ["low", "normal", "high", "critical"]
-    if urgency not in valid_urgencies:
-        logger.warning(f"Invalid urgency '{urgency}', defaulting to 'normal'")
-        urgency = "normal"
+    valid_actions = ["compensation", "review", "escalation"]
+    if action_required not in valid_actions:
+        logger.warning(f"Invalid action_required '{action_required}', defaulting to 'review'")
+        action_required = "review"
     
-    logger.warning(f"[TOOL] ESCALATION case_id={case_id}, reason={reason}, urgency={urgency}")
+    if action_required == "compensation" and compensation_amount <= 0:
+        raise ToolError(
+            "Укажите сумму компенсации (compensation_amount > 0)",
+            recoverable=True
+        )
+    
+    logger.info(f"[TOOL] CALL_THE_HUMAN case_id={case_id}, action={action_required}, reason={reason}")
 
-    # Determine assigned manager based on urgency
-    manager_assignment = {
-        "critical": "duty_manager_urgent",
-        "high": "duty_manager",
-        "normal": "support_lead",
-        "low": "support_queue",
+    # Determine priority based on action
+    priority_map = {
+        "escalation": "high",
+        "compensation": "normal",
+        "review": "normal",
     }
 
     return {
-        "status": "pending_approval",
-        "message": f"⏳ Эскалация подготовлена. Срочность: {urgency}",
-        "action_type": "escalation",
+        "status": "success",
+        "message": f"✅ Кейс передан менеджеру. Действие: {action_required}",
+        "action_type": "human_handoff",
         "case_id": case_id,
         "reason": reason,
+        "action_required": action_required,
+        "compensation_amount": compensation_amount if action_required == "compensation" else 0,
         "summary": summary or reason,
-        "urgency": urgency,
-        "assigned_to": manager_assignment.get(urgency, "support_queue"),
-        "requires_approval": True,
-        "approval_reason": "Эскалации требуют подтверждения для предотвращения ложных срабатываний",
+        "priority": priority_map.get(action_required, "normal"),
         "timestamp": datetime.now().isoformat(),
     }
 
@@ -384,52 +392,154 @@ def search_similar_cases(
 
 
 # =============================================================================
-# Tool 5: Get Order Details
+# Tool 5: Get Case Details (воспоминания о кейсе)
 # =============================================================================
 
 
 @tool
 @handle_tool_errors
-def get_order_details(
-    order_id: str,
+def get_case_details(
+    case_id: str,
 ) -> dict:
-    """Получить детали заказа для контекста.
+    """Получить полную информацию (воспоминания) о текущем кейсе.
     
-    Используй этот инструмент когда:
-    - Нужно уточнить информацию о заказе
-    - Клиент упоминает проблему с конкретным товаром
-    - Требуется проверить статус доставки
+    Используй этот инструмент ПЕРВЫМ при начале работы с кейсом!
+    
+    Возвращает:
+    - Информацию об отзыве (если есть)
+    - Историю чата с клиентом
+    - Предыдущие действия агента
+    - Данные о заказе и товаре
+    - Результаты ПРОШЛОГО анализа (если был) — поле "analysis"
+    
+    ВАЖНО про анализ:
+    - Если поле "analysis" = null → вызови request_analysis для анализа
+    - Если "analysis" есть → можно сразу принимать решения
+    - Если ситуация изменилась → вызови request_analysis повторно
     
     Args:
-        order_id: ID заказа в Wildberries
+        case_id: ID кейса
 
     Returns:
-        dict с информацией о заказе
+        dict с полной информацией о кейсе включая сохранённый анализ
     """
-    if not order_id:
-        raise ToolError("order_id обязателен", recoverable=True)
+    if not case_id:
+        raise ToolError("case_id обязателен", recoverable=True)
     
-    logger.info(f"[TOOL] get_order_details: {order_id}")
+    logger.info(f"[TOOL] get_case_details: {case_id}")
     
-    # TODO: Implement actual WB API call
-    # async with httpx.AsyncClient() as client:
-    #     response = await client.get(
-    #         f"{WB_API_URL}/orders/{order_id}",
-    #         headers={"Authorization": f"Bearer {WB_API_TOKEN}"}
-    #     )
+    # TODO: Implement actual database/API call to fetch case history
+    # This should retrieve from state/database:
+    # - Review data (if exists)
+    # - Chat history
+    # - Previous agent actions
+    # - Order details
+    # - Saved analysis results from state.analysis
     
-    # Placeholder response
+    # Placeholder response - в реальности данные берутся из state и БД
+    # Поле analysis будет заполнено если ранее вызывался request_analysis
     return {
         "status": "success",
-        "order_id": order_id,
-        "order_date": "2024-01-15",
-        "delivery_date": "2024-01-20",
-        "product_name": "Товар из заказа",
-        "quantity": 1,
-        "price": 2500,
-        "delivery_status": "delivered",
-        "return_eligible": True,
-        "days_since_delivery": 5,
+        "case_id": case_id,
+        
+        # Review info (if exists)
+        "review": {
+            "exists": True,
+            "rating": 2,
+            "text": "Товар пришёл с браком",
+            "pros": "",
+            "cons": "Царапины на корпусе, не включается",
+            "date": "2024-01-18",
+            "our_reply": None,
+        },
+        
+        # Order info
+        "order": {
+            "order_id": "WB-123456",
+            "order_date": "2024-01-15",
+            "delivery_date": "2024-01-17",
+            "product_name": "Смартфон Samsung Galaxy",
+            "price": 25000,
+            "return_eligible": True,
+        },
+        
+        # Chat history
+        "chat_history": [
+            {"role": "customer", "message": "Здравствуйте, товар бракованный", "timestamp": "2024-01-18T10:00:00"},
+            {"role": "agent", "message": "Добрый день! Приносим извинения. Можете описать проблему подробнее?", "timestamp": "2024-01-18T10:05:00"},
+        ],
+        
+        # Previous actions by agent
+        "previous_actions": [
+            {"action": "chat_message", "status": "sent", "timestamp": "2024-01-18T10:05:00"},
+        ],
+        
+        # Saved analysis from state (null if not analyzed yet)
+        # После вызова request_analysis это поле будет заполнено
+        "analysis": None,  # или dict с результатами если анализ был
+        
+        # Case metadata
+        "created_at": "2024-01-18T10:00:00",
+        "last_activity": "2024-01-18T10:05:00",
+        "status": "in_progress",
+        "customer_name": "Иван",
+    }
+
+
+# =============================================================================
+# Tool 6: Request Analysis (запрос анализа у субагента)
+# =============================================================================
+
+
+@tool
+@handle_tool_errors
+def request_analysis(
+    case_id: str,
+    reason: str = "",
+) -> dict:
+    """Запросить глубокий анализ кейса у агента-аналитика.
+    
+    Этот инструмент вызывает субагента (ноду Analysis), который проводит
+    глубокий анализ ситуации и СОХРАНЯЕТ результат в state.
+    
+    Используй этот инструмент когда:
+    - Нет результатов предыдущего анализа (get_case_details вернул analysis=null)
+    - Ситуация существенно изменилась (клиент ответил, новая информация)
+    - Нужно переоценить срочность или стратегию
+    
+    ВАЖНО: Результат анализа сохраняется в state и будет доступен
+    через get_case_details в следующих вызовах.
+    
+    Анализ определяет:
+    - Срочность (critical/high/normal/low)
+    - Тональность клиента (angry/disappointed/neutral/positive)
+    - Основную проблему
+    - Факторы риска
+    - Рекомендуемую стратегию
+    
+    Args:
+        case_id: ID кейса для анализа
+        reason: Причина запроса анализа (опционально)
+
+    Returns:
+        dict с подтверждением запуска анализа
+    """
+    if not case_id:
+        raise ToolError("case_id обязателен", recoverable=True)
+    
+    logger.info(f"[TOOL] request_analysis: {case_id}, reason: {reason}")
+    
+    # Этот инструмент является "маркером" для роутинга.
+    # После выполнения этого инструмента, граф направит выполнение
+    # в ноду Analysis, которая сохранит результат в state.
+    
+    return {
+        "status": "analysis_requested",
+        "message": "🔍 Анализ запрошен. Результат будет сохранён и доступен через get_case_details.",
+        "case_id": case_id,
+        "reason": reason or "Стандартный анализ кейса",
+        "next_step": "После анализа вызови get_case_details для получения результатов",
+        "timestamp": datetime.now().isoformat(),
     }
 
 
@@ -443,9 +553,10 @@ def get_order_details(
 AGENT_TOOLS = [
     send_chat_message,
     send_review_reply,
-    escalate_to_manager,
+    call_the_human,
     search_similar_cases,
-    get_order_details,
+    get_case_details,
+    request_analysis,
 ]
 
 def get_agent_tools() -> list:

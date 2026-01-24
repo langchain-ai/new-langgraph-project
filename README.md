@@ -1,61 +1,257 @@
-# New LangGraph Project
+# 5STARS — AI-агент для управления отзывами на Wildberries
 
-[![CI](https://github.com/langchain-ai/new-langgraph-project/actions/workflows/unit-tests.yml/badge.svg)](https://github.com/langchain-ai/new-langgraph-project/actions/workflows/unit-tests.yml)
-[![Integration Tests](https://github.com/langchain-ai/new-langgraph-project/actions/workflows/integration-tests.yml/badge.svg)](https://github.com/langchain-ai/new-langgraph-project/actions/workflows/integration-tests.yml)
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.11+-blue.svg" alt="Python">
+  <img src="https://img.shields.io/badge/LangGraph-0.2+-green.svg" alt="LangGraph">
+  <img src="https://img.shields.io/badge/LLM-Gemini-orange.svg" alt="Gemini">
+</p>
 
-This template demonstrates a simple application implemented using [LangGraph](https://github.com/langchain-ai/langgraph), designed for showing how to get started with [LangGraph Server](https://langchain-ai.github.io/langgraph/concepts/langgraph_server/#langgraph-server) and using [LangGraph Studio](https://langchain-ai.github.io/langgraph/concepts/langgraph_studio/), a visual debugging IDE.
+## 🎯 О проекте
 
-<div align="center">
-  <img src="./static/studio_ui.png" alt="Graph view in LangGraph studio UI" width="75%" />
-</div>
+**5STARS** — это интеллектуальный AI-агент для автоматизации работы с отзывами клиентов на маркетплейсе Wildberries. Проект направлен на повышение репутации магазина путём оперативного и качественного взаимодействия с покупателями.
 
-The core logic defined in `src/agent/graph.py`, showcases an single-step application that responds with a fixed string and the configuration provided.
+### Ключевые цели:
+- 🤖 **Автоматизация коммуникации** — мгновенные ответы на отзывы 24/7
+- ⭐ **Улучшение рейтинга** — конвертация негативных отзывов в позитивные
+- 💰 **Рост продаж** — высокий рейтинг → больше покупателей → выше заработок
+- ⏱️ **Экономия времени** — освобождение менеджеров от рутинных задач
 
-You can extend this graph to orchestrate more complex agentic workflows that can be visualized and debugged in LangGraph Studio.
+---
 
-## Getting Started
+## 🏗️ Архитектура
 
-1. Install dependencies, along with the [LangGraph CLI](https://langchain-ai.github.io/langgraph/concepts/langgraph_cli/), which will be used to run the server.
+Агент построен на основе **LangGraph** с использованием паттерна ReAct (Reasoning + Acting). Агент выступает **оркестратором**, который анализирует ситуацию и вызывает нужные инструменты.
+
+```
+START
+  │
+  └─► Agent (LLM-оркестратор)
+         │
+         ├─► Tools (инструменты)
+         │       │
+         │       ├─► Agent (обычный loop)
+         │       │
+         │       └─► Analysis (анализируем кейс через request_analysis)
+         │               │
+         │               └─► Agent (после анализа)
+         │
+         └─► END (завершение)
+```
+
+### Триггеры (события запуска)
+
+| Триггер | Описание |
+|---------|----------|
+| Новый отзыв | Клиент оставил отзыв на товар |
+| Сообщение в чате | Клиент написал сообщение |
+| Таймаут | Прошло N времени после нашего сообщения |
+| Изменение статуса | Изменился статус кейса в системе |
+
+### Основные узлы графа
+
+| Узел | Описание |
+|------|----------|
+| **Agent** | Оркестратор: принимает решения, вызывает инструменты |
+| **Tools** | Выполнение инструментов |
+| **Analysis** | Субагент для глубокого анализа |
+
+### Потоки данных
+
+1. **`get_case_details`** — возвращает всю информацию о кейсе, **включая сохранённый анализ**
+2. **`request_analysis`** — вызывает субагента Analysis, **результат сохраняется в state**
+3. В следующих вызовах анализ доступен через `get_case_details` без повторного вызова
+
+---
+
+## 🛠️ Инструменты агента
+
+Агент имеет доступ к 6 инструментам для работы с кейсами:
+
+| Инструмент | Описание |
+|------------|----------|
+| `get_case_details` | Получение информации о кейсе (общаяя информация + предыдущий анализ) |
+| `request_analysis` | Запрос анализа кейса у субагента |
+| `send_chat_message` | Отправка личного сообщения клиенту в чате WB |
+| `send_review_reply` | Отправка публичного ответа на отзыв |
+| `search_similar_cases` | Векторный поиск похожих кейсов в БД |
+| `call_the_human` | Передача кейса менеджеру (выплата компенсации, сложные случаи) |
+
+---
+
+## 📊 Классификация кейсов
+
+### Уровни срочности (Urgency):
+- 🔴 **critical** — юридические угрозы, репутационные риски
+- 🟠 **high** — 1-3★, агрессия, повторная жалоба  
+- 🟡 **normal** — 4★, конструктивная критика
+- 🟢 **low** — 5★, позитив, благодарность
+
+### Тональность (Sentiment):
+- 😠 **angry** — агрессивный, требовательный тон
+- 😔 **disappointed** — разочарование
+- 😐 **neutral** — спокойный, фактический
+- 😊 **positive** — благодарность, похвала
+
+---
+
+## 🚀 Быстрый старт
+
+### Требования
+- Python 3.11+
+- Google AI API ключ (Gemini)
+
+### Установка
 
 ```bash
-cd path/to/your/app
-pip install -e . "langgraph-cli[inmem]"
+# Клонирование репозитория
+git clone https://github.com/your-repo/5stars.git
+cd 5stars
+
+# Создание виртуального окружения
+python -m venv .venv
+source .venv/bin/activate  # Linux/macOS
+# .venv\Scripts\activate   # Windows
+
+# Установка зависимостей
+pip install -e ".[dev]"
 ```
 
-2. (Optional) Customize the code and project as needed. Create a `.env` file if you need to use secrets.
+### Запуск
 
 ```bash
-cp .env.example .env
-```
-
-If you want to enable LangSmith tracing, add your LangSmith API key to the `.env` file.
-
-```text
-# .env
-LANGSMITH_API_KEY=lsv2...
-```
-
-3. Start the LangGraph Server.
-
-```shell
+# Запуск через LangGraph CLI
 langgraph dev
+
+# Или через LangGraph Studio
+langgraph up
+
+# Или сo и пушим изменения в основную ветку, 
+# после чего изменения станут доступными в LangSmith UI
 ```
 
-For more information on getting started with LangGraph Server, [see here](https://langchain-ai.github.io/langgraph/tutorials/langgraph-platform/local-server/).
+---
 
-## How to customize
+## ⚙️ Конфигурация
 
-1. **Define runtime context**: Modify the `Context` class in the `graph.py` file to expose the arguments you want to configure per assistant. For example, in a chatbot application you may want to define a dynamic system prompt or LLM to use. For more information on runtime context in LangGraph, [see here](https://langchain-ai.github.io/langgraph/agents/context/?h=context#static-runtime-context).
+Агент поддерживает настройку через LangSmith UI:
 
-2. **Extend the graph**: The core logic of the application is defined in [graph.py](./src/agent/graph.py). You can modify this file to add new nodes, edges, or change the flow of information.
+| Параметр | По умолчанию | Описание |
+|----------|--------------|----------|
+| `model_name` | `gemini-3-flash-preview` | Модель LLM для рассуждений |
+| `temperature` | `1.0` | Температура генерации (0.0-2.0) |
+| `max_tokens` | `2048` | Максимум токенов в ответе |
+| `max_compensation` | `1000` | Максимальная автоматическая компенсация (₽) |
 
-## Development
+---
 
-While iterating on your graph in LangGraph Studio, you can edit past state and rerun your app from previous states to debug specific nodes. Local changes will be automatically applied via hot reload.
+## 📁 Структура проекта
 
-Follow-up requests extend the same thread. You can create an entirely new thread, clearing previous history, using the `+` button in the top right.
+```
+5stars/
+├── agent/
+│   ├── graph.py            # Основной граф LangGraph
+│   ├── state.py            # Определения состояний и конфигурации
+│   ├── tools.py            # Инструменты агента
+│   ├── prompts.py          # Системные промпты
+│   └── logging.py          # Настройка логирования
+├── tests/
+│   ├── unit_tests/         # Юнит-тесты
+│   └── integration_tests/  # Интеграционные тесты
+├── docs/                   # Документация
+├── langgraph.json          # Конфигурация LangGraph
+├── pyproject.toml          # Зависимости и настройки проекта
+└── Makefile                # Команды для разработки
+```
 
-For more advanced features and examples, refer to the [LangGraph documentation](https://langchain-ai.github.io/langgraph/). These resources can help you adapt this template for your specific use case and build more sophisticated conversational agents.
+---
 
-LangGraph Studio also integrates with [LangSmith](https://smith.langchain.com/) for more in-depth tracing and collaboration with teammates, allowing you to analyze and optimize your chatbot's performance.
+## 🧪 Тестирование
 
+```bash
+# Запуск всех тестов
+make test
+
+# Только юнит-тесты
+python -m pytest tests/unit_tests/
+
+# Интеграционные тесты
+make integration_tests
+
+# Тесты с отслеживанием изменений
+make test_watch
+```
+
+---
+
+## 🔧 Разработка
+
+```bash
+# Форматирование кода
+make format
+
+# Проверка линтером
+make lint
+
+# Проверка типов
+python -m mypy --strict src/
+```
+
+---
+
+## 📈 Алгоритм работы с отзывами
+
+### Шаг 1: Оценка контекста
+
+1. Проверить наличие результатов анализа в состоянии
+2. Если анализа нет или ситуация изменилась → вызвать `analyze_case`
+3. Если нужен контекст → вызвать `get_case_details`
+
+### Шаг 2: Стратегия по рейтингу
+
+**1-3 звезды (КРИТИЧНО):**
+
+1. Искреннее сочувствие и признание проблемы
+2. Конкретное решение + предложение компенсации (300-1000₽)
+3. После согласия клиента → `call_the_human(action_required="compensation")`
+4. При агрессии/угрозах → `call_the_human(action_required="escalation")`
+
+**4 звезды (НЕЙТРАЛЬНО):**
+
+1. Благодарность за обратную связь
+2. Уточнение деталей проблемы
+3. Компенсация 100-300₽ + просьба пересмотреть оценку
+4. После согласия → `call_the_human(action_required="compensation")`
+
+**5 звёзд (ПОЗИТИВНО):**
+
+1. Благодарность клиенту
+2. Публичный ответ через `send_review_reply`
+3. Стимул для повторной покупки
+
+---
+
+## 🔒 Human-in-the-Loop
+
+Инструмент `call_the_human` передаёт кейс менеджеру для:
+
+- ✅ **Выплаты компенсации** — клиент согласился, менеджер выплатит и закроет кейс
+- ✅ **Сложных ситуаций** — требуется человеческое решение
+- ✅ **Эскалации** — клиент требует руководство или есть юридические риски
+
+Это обеспечивает контроль качества и предотвращает ошибки.
+
+---
+
+## 📦 Зависимости
+
+- **LangGraph** — фреймворк для построения AI-агентов
+- **LangChain** — работа с LLM и инструментами
+- **Google Gemini** — языковая модель
+- **Pydantic** — валидация данных
+- **Redis** — кэширование и очереди
+
+---
+
+<p align="center">
+  <b>5STARS</b> — превращаем каждый отзыв в возможность улучшить бизнес ⭐⭐⭐⭐⭐
+</p>

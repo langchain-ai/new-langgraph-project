@@ -2,28 +2,35 @@
 
 ReAct agent with:
 - Autonomous decision making (AI decides all actions)
-- Escalation tool for human involvement when needed
+- Tool for human handoff when needed
 - Checkpointing for state persistence
 - Error handling with retry policies
 - Streaming support
+- Analysis subagent (called via request_analysis tool, saves to state)
 
 Graph structure:
     START
       │
-      └─► Analysis (case classification)
+      └─► Agent (LLM-оркестратор)
              │
-             └─► Agent (LLM reasoning)
-                    │
-                    ├─► Tools (tool execution)
-                    │       │
-                    │       └─► Agent (loop)
-                    │
-                    └─► END (when done)
+             ├─► Tools (инструменты)
+             │       │
+             │       ├─► Agent (loop)
+             │       │
+             │       └─► Analysis (если вызван request_analysis)
+             │               │
+             │               └─► Agent (loop)
+             │
+             └─► END (завершение)
 
 Node naming:
-- Analysis: Case analysis and classification
-- Agent: Main LLM reasoning node  
+- Agent: Main LLM reasoning node (оркестратор)
 - Tools: Tool execution node
+- Analysis: Subagent for deep case analysis (saves to state)
+
+Data flow:
+- get_case_details: возвращает информацию о кейсе включая сохранённый анализ (если есть)
+- request_analysis: вызывает субагента Analysis, результат сохраняется в state
 """
 
 from __future__ import annotations
@@ -328,16 +335,17 @@ async def analysis_node(state: CaseState, config: RunnableConfig) -> dict[str, A
 async def agent_node(state: CaseState, config: RunnableConfig) -> dict[str, Any]:
     """Main agent reasoning node - invoke LLM with tools.
     
-    This is the core node where the AI analyzes the situation and decides on actions.
-    All decisions are made autonomously by the AI. If human involvement is needed,
-    the AI should use the escalate_to_manager tool.
+    This is the core orchestrator node where the AI analyzes the situation 
+    and decides on actions. The agent can call analyze_case tool to get
+    detailed analysis when needed.
     
     Available tools:
     - send_chat_message: Send private chat message
     - send_review_reply: Send public review reply
-    - escalate_to_manager: Escalate case to human manager
+    - call_the_human: Hand off case to human manager
     - search_similar_cases: Search knowledge base
-    - get_order_details: Get order information
+    - get_case_details: Get case history and context
+    - analyze_case: Request detailed case analysis
     """
     logger.info("[Agent] Processing case")
     
@@ -393,6 +401,25 @@ def route_after_agent(state: CaseState) -> Literal["Tools", "__end__"]:
     return "Tools"
 
 
+def route_after_tools(state: CaseState) -> Literal["Analysis", "Agent"]:
+    """Route execution after Tools node.
+    
+    Checks if request_analysis was called - if so, route to Analysis subagent.
+    Otherwise, return to Agent.
+    """
+    messages = state.get("messages", [])
+    
+    # Find the last ToolMessage to check what tool was executed
+    for msg in reversed(messages):
+        if isinstance(msg, ToolMessage):
+            # Check if this was a request_analysis call
+            if "analysis_requested" in str(msg.content):
+                logger.info("[Router] request_analysis detected, routing to Analysis")
+                return "Analysis"
+            break
+    
+    return "Agent"
+
 
 # =============================================================================
 # Graph Construction
@@ -406,15 +433,24 @@ def create_graph() -> StateGraph:
     
         START
           │
-          └─► Analysis (case classification)
+          └─► Agent (LLM-оркестратор)
                  │
-                 └─► Agent (LLM reasoning)
-                        │
-                        ├─► Tools (tool execution)
-                        │       │
-                        │       └─► Agent (loop)
-                        │
-                        └─► END (when done)
+                 ├─► Tools (инструменты)
+                 │       │
+                 │       ├─► Agent (обычный loop)
+                 │       │
+                 │       └─► Analysis (если вызван request_analysis)
+                 │               │
+                 │               └─► Agent (после анализа)
+                 │
+                 └─► END (завершение)
+    
+    The agent acts as an orchestrator:
+    - Receives triggers (new review, customer message, timeout)
+    - Calls get_case_details to retrieve history/context (including saved analysis)
+    - Calls request_analysis if no analysis or situation changed → Analysis subagent
+    - Analysis subagent saves results to state
+    - Uses other tools to take actions (send messages, handoff to human)
     
     Returns:
         Compiled StateGraph ready for execution.
@@ -432,24 +468,21 @@ def create_graph() -> StateGraph:
     # Add Nodes
     # ==========================================================================
     
-    # Analysis node: case analysis and classification
-    workflow.add_node("Analysis", analysis_node)
-    
-    # Agent node: main LLM reasoning with tools
+    # Agent node: main LLM reasoning with tools (orchestrator)
     workflow.add_node("Agent", agent_node)
     
     # Tools node: execute tool calls from Agent
     workflow.add_node("Tools", tool_node)
+    
+    # Analysis node: subagent for deep case analysis (saves to state)
+    workflow.add_node("Analysis", analysis_node)
 
     # ==========================================================================
     # Add Edges
     # ==========================================================================
     
-    # Entry point: START → Analysis
-    workflow.add_edge(START, "Analysis")
-    
-    # After analysis: Analysis → Agent
-    workflow.add_edge("Analysis", "Agent")
+    # Entry point: START → Agent (agent decides what to do first)
+    workflow.add_edge(START, "Agent")
     
     # After Agent: conditional routing
     workflow.add_conditional_edges(
@@ -461,7 +494,18 @@ def create_graph() -> StateGraph:
         },
     )
     
-    # After tool execution: loop back to Agent
+    # After Tools: check if request_analysis was called
+    workflow.add_conditional_edges(
+        "Tools",
+        route_after_tools,
+        {
+            "Analysis": "Analysis",
+            "Agent": "Agent",
+        },
+    )
+    
+    # After Analysis: return to Agent with updated state
+    workflow.add_edge("Analysis", "Agent")
     workflow.add_edge("Tools", "Agent")
 
     # Compile

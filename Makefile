@@ -27,11 +27,11 @@ extended_tests:
 ######################
 
 # Define a variable for Python and notebook files.
-PYTHON_FILES=src/
+PYTHON_FILES=agent/
 MYPY_CACHE=.mypy_cache
 lint format: PYTHON_FILES=.
 lint_diff format_diff: PYTHON_FILES=$(shell git diff --name-only --diff-filter=d main | grep -E '\.py$$|\.ipynb$$')
-lint_package: PYTHON_FILES=src
+lint_package: PYTHON_FILES=agent
 lint_tests: PYTHON_FILES=tests
 lint_tests: MYPY_CACHE=.mypy_cache_test
 
