@@ -6,31 +6,30 @@ ReAct agent with:
 - Checkpointing for state persistence
 - Error handling with retry policies
 - Streaming support
-- Analysis subagent (called via request_analysis tool, saves to state)
+- Analysis-first architecture (анализ перед каждым выполнением)
 
 Graph structure:
     START
       │
-      └─► Agent (LLM-оркестратор)
+      └─► Analysis (Анализ ситуации)
              │
-             ├─► Tools (инструменты)
-             │       │
-             │       ├─► Agent (loop)
-             │       │
-             │       └─► Analysis (если вызван request_analysis)
-             │               │
-             │               └─► Agent (loop)
-             │
-             └─► END (завершение)
+             └─► Agent (Основной агент с инструментами)
+                    │
+                    ├─► Tools (Выполнение действий)
+                    │     │
+                    │     └─► Agent (loop)
+                    │
+                    └─► END (завершение)
 
 Node naming:
-- Agent: Main LLM reasoning node (оркестратор)
+- Analysis: Анализ контекста и ситуации (AI размышления)
+- Agent: Основной агент выполняющий действия (AI actions)
 - Tools: Tool execution node
-- Analysis: Subagent for deep case analysis (saves to state)
 
 Data flow:
-- get_case_details: возвращает информацию о кейсе включая сохранённый анализ (если есть)
-- request_analysis: вызывает субагента Analysis, результат сохраняется в state
+- При каждом запуске графа Analysis перепроверяет ситуацию
+- Analysis помнит о предыдущих анализах и информации кейса
+- get_case_details: возвращает информацию о кейсе включая сохранённый анализ
 """
 
 from __future__ import annotations
@@ -205,8 +204,11 @@ def _extract_text(content) -> str:
 async def analysis_node(state: CaseState, config: RunnableConfig) -> dict[str, Any]:
     """Analyze the case using LLM to determine urgency, sentiment, and routing.
     
-    This node runs before the main agent to analyze the case using AI
-    based on the review content and context.
+    ВСЕГДА ПЕРВАЯ НОДА в графе. При каждом запуске графа (новый триггер)
+    агент анализа перепроверяет ситуацию, помня о предыдущих анализах
+    и всей информации кейса из state.
+    
+    Этот узел отвечает за размышления - что было и что нужно сделать.
     """
     import json
     
@@ -333,19 +335,17 @@ async def analysis_node(state: CaseState, config: RunnableConfig) -> dict[str, A
 
 
 async def agent_node(state: CaseState, config: RunnableConfig) -> dict[str, Any]:
-    """Main agent reasoning node - invoke LLM with tools.
+    """Main agent node - invoke LLM with tools to execute actions.
     
-    This is the core orchestrator node where the AI analyzes the situation 
-    and decides on actions. The agent can call analyze_case tool to get
-    detailed analysis when needed.
+    Основной агент выполняющий действия. Вызывается после Analysis node,
+    который уже провёл анализ ситуации.
     
     Available tools:
     - send_chat_message: Send private chat message
     - send_review_reply: Send public review reply
     - call_the_human: Hand off case to human manager
     - search_similar_cases: Search knowledge base
-    - get_case_details: Get case history and context
-    - analyze_case: Request detailed case analysis
+    - get_case_details: Get case history and context (включая результаты анализа)
     """
     logger.info("[Agent] Processing case")
     
@@ -401,24 +401,7 @@ def route_after_agent(state: CaseState) -> Literal["Tools", "__end__"]:
     return "Tools"
 
 
-def route_after_tools(state: CaseState) -> Literal["Analysis", "Agent"]:
-    """Route execution after Tools node.
-    
-    Checks if request_analysis was called - if so, route to Analysis subagent.
-    Otherwise, return to Agent.
-    """
-    messages = state.get("messages", [])
-    
-    # Find the last ToolMessage to check what tool was executed
-    for msg in reversed(messages):
-        if isinstance(msg, ToolMessage):
-            # Check if this was a request_analysis call
-            if "analysis_requested" in str(msg.content):
-                logger.info("[Router] request_analysis detected, routing to Analysis")
-                return "Analysis"
-            break
-    
-    return "Agent"
+
 
 
 # =============================================================================
@@ -433,24 +416,22 @@ def create_graph() -> StateGraph:
     
         START
           │
-          └─► Agent (LLM-оркестратор)
+          └─► Analysis (Анализ ситуации - размышления)
                  │
-                 ├─► Tools (инструменты)
-                 │       │
-                 │       ├─► Agent (обычный loop)
-                 │       │
-                 │       └─► Analysis (если вызван request_analysis)
-                 │               │
-                 │               └─► Agent (после анализа)
-                 │
-                 └─► END (завершение)
+                 └─► Agent (Основной агент - действия)
+                        │
+                        ├─► Tools (Выполнение инструментов)
+                        │     │
+                        │     └─► Agent (loop)
+                        │
+                        └─► END (завершение)
     
-    The agent acts as an orchestrator:
-    - Receives triggers (new review, customer message, timeout)
-    - Calls get_case_details to retrieve history/context (including saved analysis)
-    - Calls request_analysis if no analysis or situation changed → Analysis subagent
-    - Analysis subagent saves results to state
-    - Uses other tools to take actions (send messages, handoff to human)
+    Workflow:
+    1. При каждом запуске графа (триггер) сначала Analysis
+    2. Analysis анализирует ситуацию помня о предыдущих анализах
+    3. Agent получает результаты анализа и выполняет действия
+    4. Tools выполняют действия (сообщения, эскалация и т.д.)
+    5. Возврат к Agent для следующего цикла или завершение
     
     Returns:
         Compiled StateGraph ready for execution.
@@ -468,21 +449,24 @@ def create_graph() -> StateGraph:
     # Add Nodes
     # ==========================================================================
     
-    # Agent node: main LLM reasoning with tools (orchestrator)
+    # Analysis node: ПЕРВАЯ нода - анализ ситуации (размышления)
+    workflow.add_node("Analysis", analysis_node)
+    
+    # Agent node: основной агент выполняющий действия
     workflow.add_node("Agent", agent_node)
     
     # Tools node: execute tool calls from Agent
     workflow.add_node("Tools", tool_node)
-    
-    # Analysis node: subagent for deep case analysis (saves to state)
-    workflow.add_node("Analysis", analysis_node)
 
     # ==========================================================================
     # Add Edges
     # ==========================================================================
     
-    # Entry point: START → Agent (agent decides what to do first)
-    workflow.add_edge(START, "Agent")
+    # Entry point: START → Analysis (всегда начинаем с анализа)
+    workflow.add_edge(START, "Analysis")
+    
+    # After Analysis: всегда переходим к Agent
+    workflow.add_edge("Analysis", "Agent")
     
     # After Agent: conditional routing
     workflow.add_conditional_edges(
@@ -494,18 +478,7 @@ def create_graph() -> StateGraph:
         },
     )
     
-    # After Tools: check if request_analysis was called
-    workflow.add_conditional_edges(
-        "Tools",
-        route_after_tools,
-        {
-            "Analysis": "Analysis",
-            "Agent": "Agent",
-        },
-    )
-    
-    # After Analysis: return to Agent with updated state
-    workflow.add_edge("Analysis", "Agent")
+    # After Tools: всегда возврат к Agent (loop)
     workflow.add_edge("Tools", "Agent")
 
     # Compile
