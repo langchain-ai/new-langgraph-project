@@ -53,7 +53,7 @@ def handle_tool_errors(func: Callable) -> Callable:
                 "error": str(e),
                 "recoverable": e.recoverable,
                 "details": e.details,
-                "suggestion": "Попробуйте изменить параметры или выбрать другой подход",
+                "suggestion": "Попробуй изменить параметры или выбрать другой подход",
             }
         except Exception as e:
             logger.exception(f"[TOOL UNEXPECTED ERROR] {func.__name__}: {e}")
@@ -61,7 +61,7 @@ def handle_tool_errors(func: Callable) -> Callable:
                 "status": "error",
                 "error": f"Неожиданная ошибка: {str(e)}",
                 "recoverable": False,
-                "suggestion": "Рассмотрите эскалацию на менеджера",
+                "suggestion": "Рассмотри вызов менеджера для ручного решения",
             }
     
     return wrapper
@@ -94,10 +94,8 @@ def send_chat_message(
     
     Используй этот инструмент когда нужно:
     - Уточнить детали проблемы у клиента
-    - Предложить решение или компенсацию приватно
+    - Предложить решение или компенсацию
     - Продолжить диалог с клиентом
-    
-    ВАЖНО: Это приватное сообщение, видимое только клиенту.
     
     Args:
         chat_id: ID чата в Wildberries
@@ -146,16 +144,14 @@ def send_review_reply(
 ) -> dict:
     """Отправить публичный ответ на отзыв Wildberries.
     
-    Используй этот инструмент когда нужно:
-    - Публично ответить на отзыв клиента
-    - Показать другим покупателям, что продавец заботится о клиентах
-    - Дать официальный ответ от имени магазина
+    Используй этот инструмент когда:
+    - Клиент выполнил условия и исправил отзыв, проблема решена
+    - Клиент оставил отзыв 5 звезд, позитив
+    - Нужно завершить кейс и отправить публичный ответ
     
-    ВАЖНО: 
-    - Ответ будет виден ВСЕМ покупателям!
-    - Максимум 300 символов!
-    - НЕ указывай конкретные суммы компенсаций публично
-    - НЕ раскрывай личные данные клиента
+    ВАЖНО:
+    - НЕ указывай наличие компенсаций или суммы в публичном ответе
+    - МЯГКО отрицай негатив и предлагай связаться в чате для деталей
     
     Args:
         review_id: ID отзыва в Wildberries
@@ -171,7 +167,7 @@ def send_review_reply(
     reply_text = validate_message_length(reply_text, 300, "reply_text")
     
     # Check for prohibited content
-    prohibited_patterns = ["₽", "руб", "компенсац", "возврат средств"]
+    prohibited_patterns = ["₽", "руб", "компенсац", "деньги"]
     for pattern in prohibited_patterns:
         if pattern.lower() in reply_text.lower():
             raise ToolError(
@@ -194,42 +190,41 @@ def send_review_reply(
     
     return {
         "status": "success",
-        "message": "✅ Публичный ответ на отзыв отправлен",
+        "message": "Публичный ответ на отзыв отправлен",
         "action_type": "review_reply",
         "review_id": review_id,
-        "reply_text": reply_text,
+        "reply_text": reply_text[:100],
         "timestamp": datetime.now().isoformat(),
     }
 
 
 # =============================================================================
-# Tool 3: Call the Human (передача кейса человеку)
+# Tool 3: Call the Manager (передача кейса менеджеру)
 # =============================================================================
 
 
 @tool
 @handle_tool_errors
-def call_the_human(
+def call_the_manager(
     case_id: str,
     reason: str,
-    action_required: str = "review",
+    action_required: str = "escalation",
     compensation_amount: int = 0,
     summary: str = "",
 ) -> dict:
-    """Передать кейс человеку-менеджеру для дальнейшей обработки.
+    """Передать кейс менеджеру для дальнейшей обработки.
     
     Используй этот инструмент когда:
-    - Клиент согласился на компенсацию → менеджер выплатит и закроет кейс
+    - Клиент согласился на компенсацию, чтобы менеджер выплатил
     - Ситуация слишком сложная для автоматического решения
-    - Клиент требует связи с руководством/живым человеком
-    - Есть юридические риски или угрозы
-    - Клиент недоволен после нескольких попыток решения
-    - Требуется нестандартное решение
+    - Клиент требует связи с руководством (человеком)
+    - Обнаружены конкретные юридические риски или угрозы
+    - Клиент очень недоволен после нескольких попыток решения
     
     Args:
         case_id: ID кейса
-        reason: Причина передачи человеку (кратко, но информативно)
-        action_required: Требуемое действие - "compensation" (выплата), "review" (анализ), "escalation" (эскалация руководству)
+        reason: Причина передачи менеджеру
+        action_required: Требуемое действие ("compensation" - выплата или "escalation" - эскалация)
         compensation_amount: Сумма компенсации в рублях (если action_required="compensation")
         summary: Краткое резюме ситуации и рекомендации для менеджера
 
@@ -281,7 +276,265 @@ def call_the_human(
 
 
 # =============================================================================
-# Tool 4: Search Similar Cases
+# Tool 4: Confirm WB Return
+# =============================================================================
+
+
+@tool
+@handle_tool_errors
+def confirm_wb_return(
+    order_id: str,
+    reason: str = "Договоренность с клиентом",
+    notes: str = "",
+) -> dict:
+    """Подтвердить возможность возврата товара клиенту в Wildberries.
+    
+    Используй этот инструмент когда:
+    - Клиент выполнил условия договоренности (исправил отзыв, добавил положительный)
+    - В чате достигнута договоренность о возврате товара
+    - Клиент запросил возврат после решения проблемы
+    - Нужно одобрить возврат, чтобы клиент мог оставить заявку в ЛК WB
+    
+    ВАЖНО:
+    - Используй только после достижения договоренности с клиентом
+    - После вызова инструмента можно сообщать клиенту об одобрении возврата
+    - Клиент сможет оформить заявку на возврат в своем личном кабинете WB
+    
+    Args:
+        order_id: ID заказа в Wildberries
+        reason: Причина подтверждения возврата
+        notes: Дополнительные заметки для внутреннего использования
+
+    Returns:
+        dict с информацией о подтверждении возврата
+    """
+    # Validation
+    if not order_id:
+        raise ToolError("order_id обязателен", recoverable=True)
+    
+    if not reason or len(reason.strip()) < 5:
+        raise ToolError(
+            "Укажите причину подтверждения возврата (минимум 5 символов)",
+            recoverable=True
+        )
+    
+    reason = reason.strip()
+    notes = notes.strip() if notes else ""
+    
+    logger.info(f"[TOOL] confirm_wb_return for order {order_id}: {reason[:50]}...")
+
+    # TODO: Implement actual WB API call
+    # import httpx
+    # async with httpx.AsyncClient() as client:
+    #     response = await client.post(
+    #         f"{WB_API_URL}/returns/{order_id}/confirm",
+    #         json={"reason": reason, "notes": notes},
+    #         headers={"Authorization": f"Bearer {WB_API_TOKEN}"}
+    #     )
+    #     response.raise_for_status()
+    
+    return {
+        "status": "success",
+        "message": "✅ Возврат подтвержден. Клиент может оформить заявку в ЛК Wildberries",
+        "action_type": "return_confirmed",
+        "order_id": order_id,
+        "reason": reason,
+        "notes": notes,
+        "return_window_days": 14,  # Placeholder: срок для оформления возврата
+        "timestamp": datetime.now().isoformat(),
+        "client_instruction": "Теперь вы можете оформить заявку на возврат в личном кабинете Wildberries в разделе 'Мои заказы'",
+    }
+
+
+# =============================================================================
+# Tool 5: Search Internet
+# =============================================================================
+
+
+@tool
+@handle_tool_errors
+def search_internet(
+    query: str,
+    max_results: int = 3,
+) -> dict:
+    """Поиск информации в интернете для решения проблем клиентов.
+    
+    Используй этот инструмент когда:
+    - Нужна актуальная информация о товаре или проблеме
+    - Клиент задает вопрос, требующий специфических знаний
+    - Нужно найти инструкции или решения проблем
+    - Требуется проверить информацию о продукте
+    
+    ВАЖНО:
+    - Используй конкретные поисковые запросы
+    - Результаты помогут дать более точный ответ клиенту
+    - Не передавай клиенту ссылки, используй найденную информацию для формирования ответа
+    
+    Args:
+        query: Поисковый запрос (чем конкретнее, тем лучше)
+        max_results: Максимальное количество результатов (1-10)
+
+    Returns:
+        dict с результатами поиска
+    """
+    # Validation
+    if not query or len(query.strip()) < 3:
+        raise ToolError(
+            "Укажите поисковый запрос (минимум 3 символа)",
+            recoverable=True
+        )
+    
+    max_results = max(1, min(10, max_results))
+    query = query.strip()
+    
+    logger.info(f"[TOOL] search_internet: {query[:50]}...")
+
+    # TODO: Implement actual internet search (e.g., using Tavily, SerpAPI, or similar)
+    # from tavily import TavilyClient
+    # client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
+    # response = client.search(query, max_results=max_results)
+    
+    # Placeholder response with realistic data structure
+    search_results = [
+        {
+            "title": "Как правильно стирать изделия из хлопка",
+            "url": "https://example.com/wash-cotton",
+            "snippet": "Хлопковые изделия рекомендуется стирать при температуре не выше 40°C. Используйте мягкие моющие средства без отбеливателя. Сушите в естественных условиях.",
+            "relevance_score": 0.95,
+        },
+        {
+            "title": "Уход за одеждой: полное руководство",
+            "url": "https://example.com/clothing-care",
+            "snippet": "Перед стиркой проверяйте этикетки с инструкциями. Разделяйте белое и цветное белье. Деликатные ткани стирайте отдельно.",
+            "relevance_score": 0.87,
+        },
+        {
+            "title": "Проблемы после стирки: как избежать",
+            "url": "https://example.com/washing-problems",
+            "snippet": "Если изделие село после стирки, возможно была превышена температура. Следуйте рекомендациям производителя для каждого типа ткани.",
+            "relevance_score": 0.82,
+        },
+    ]
+    
+    # Filter results based on max_results
+    search_results = search_results[:max_results]
+    
+    # Format summary
+    summary = " ".join([r["snippet"] for r in search_results])
+    
+    return {
+        "status": "success",
+        "query": query,
+        "results_count": len(search_results),
+        "search_results": search_results,
+        "summary": summary[:500],  # Краткая сводка для быстрого анализа
+        "timestamp": datetime.now().isoformat(),
+        "suggestion": "Используй найденную информацию для формирования более точного ответа клиенту",
+    }
+
+
+# =============================================================================
+# Tool 6: Send Instruction
+# =============================================================================
+
+
+@tool
+@handle_tool_errors
+def send_instruction(
+    chat_id: str,
+    instruction_type: str,
+    additional_message: str = "",
+) -> dict:
+    """Отправить инструкцию (изображение) клиенту в чат.
+    
+    Используй этот инструмент когда:
+    - Нужно показать клиенту, как изменить отзыв
+    - Требуется инструкция по оформлению возврата
+    - Клиент не понимает, как выполнить действие
+    - После подтверждения возврата нужно показать шаги
+    
+    Доступные типы инструкций:
+    - "change_review" - Как изменить отзыв на WB
+    - "return_process" - Как оформить возврат в ЛК WB
+    - "add_review" - Как добавить новый отзыв
+    - "contact_support" - Как связаться с поддержкой WB
+    
+    Args:
+        chat_id: ID чата в Wildberries
+        instruction_type: Тип инструкции (см. список выше)
+        additional_message: Дополнительное текстовое сообщение к инструкции
+
+    Returns:
+        dict с информацией об отправке инструкции
+    """
+    # Validation
+    if not chat_id:
+        raise ToolError("chat_id обязателен", recoverable=True)
+    
+    valid_instruction_types = [
+        "change_review",
+        "return_process",
+        "add_review",
+        "contact_support"
+    ]
+    
+    if instruction_type not in valid_instruction_types:
+        raise ToolError(
+            f"Неверный тип инструкции. Доступные: {', '.join(valid_instruction_types)}",
+            recoverable=True,
+            details={"valid_types": valid_instruction_types}
+        )
+    
+    additional_message = additional_message.strip() if additional_message else ""
+    
+    logger.info(f"[TOOL] send_instruction to chat {chat_id}: type={instruction_type}")
+
+    # TODO: Implement actual file sending through WB API
+    # import httpx
+    # async with httpx.AsyncClient() as client:
+    #     # Get instruction image from storage
+    #     instruction_file = get_instruction_image(instruction_type)
+    #     
+    #     # Upload file to WB
+    #     response = await client.post(
+    #         f"{WB_API_URL}/chats/{chat_id}/files",
+    #         files={"file": instruction_file},
+    #         data={"message": additional_message},
+    #         headers={"Authorization": f"Bearer {WB_API_TOKEN}"}
+    #     )
+    #     response.raise_for_status()
+    
+    # Map instruction types to file names (for future implementation)
+    instruction_files = {
+        "change_review": "instructions/how_to_change_review.png",
+        "return_process": "instructions/how_to_return.png",
+        "add_review": "instructions/how_to_add_review.png",
+        "contact_support": "instructions/how_to_contact_support.png",
+    }
+    
+    instruction_titles = {
+        "change_review": "Как изменить отзыв на Wildberries",
+        "return_process": "Как оформить возврат товара",
+        "add_review": "Как добавить новый отзыв",
+        "contact_support": "Как связаться с поддержкой Wildberries",
+    }
+    
+    return {
+        "status": "success",
+        "message": "✅ Инструкция отправлена в чат",
+        "action_type": "instruction_sent",
+        "chat_id": chat_id,
+        "instruction_type": instruction_type,
+        "instruction_title": instruction_titles[instruction_type],
+        "file_path": instruction_files[instruction_type],
+        "additional_message": additional_message,
+        "timestamp": datetime.now().isoformat(),
+        "next_step": "Дождись подтверждения от клиента, что инструкция понятна",
+    }
+
+
+# =============================================================================
+# Tool 7: Search Similar Cases
 # =============================================================================
 
 
@@ -292,13 +545,12 @@ def search_similar_cases(
     rating: Optional[int] = None,
     limit: int = 3,
 ) -> dict:
-    """Найти похожие кейсы из истории для анализа лучших практик.
+    """Найти похожие кейсы из истории.
     
     Используй этот инструмент когда:
     - Нужно понять, как решались похожие проблемы ранее
     - Ищешь оптимальную стратегию ответа
-    - Хочешь узнать типичную компенсацию для такого типа проблем
-    - Сомневаешься в правильном подходе
+    - Сомневаешься в правильности подхода
     
     Args:
         issue_description: Описание проблемы для поиска (чем подробнее, тем лучше)
@@ -379,7 +631,7 @@ def search_similar_cases(
         success_rate = sum(1 for c in similar_cases if c["success"]) / len(similar_cases)
         recommendation = f"На основе {len(similar_cases)} похожих кейсов: средняя компенсация {avg_compensation:.0f}₽, успешность {success_rate:.0%}"
     else:
-        recommendation = "Похожих кейсов не найдено. Рекомендуется стандартный подход."
+        recommendation = "Похожих кейсов не найдено. Продолжай с базовой стратегией."
     
     return {
         "status": "success",
@@ -392,102 +644,6 @@ def search_similar_cases(
 
 
 # =============================================================================
-# Tool 5: Get Case Details (воспоминания о кейсе)
-# =============================================================================
-
-
-@tool
-@handle_tool_errors
-def get_case_details(
-    case_id: str,
-) -> dict:
-    """Получить полную информацию (воспоминания) о текущем кейсе.
-    
-    Используй этот инструмент ПЕРВЫМ при начале работы с кейсом!
-    
-    Возвращает:
-    - Информацию об отзыве (если есть)
-    - Историю чата с клиентом
-    - Предыдущие действия агента
-    - Данные о заказе и товаре
-    - Результаты анализа из Analysis node — поле "analysis"
-    
-    ВАЖНО про анализ:
-    - Поле "analysis" всегда заполнено, так как Analysis node запускается первым
-    - Анализ обновляется при каждом запуске графа (новый триггер)
-    - Анализ помнит о предыдущих анализах и всей истории кейса
-    
-    Args:
-        case_id: ID кейса
-
-    Returns:
-        dict с полной информацией о кейсе включая результаты анализа
-    """
-    if not case_id:
-        raise ToolError("case_id обязателен", recoverable=True)
-    
-    logger.info(f"[TOOL] get_case_details: {case_id}")
-    
-    # TODO: Implement actual database/API call to fetch case history
-    # This should retrieve from state/database:
-    # - Review data (if exists)
-    # - Chat history
-    # - Previous agent actions
-    # - Order details
-    # - Saved analysis results from state.analysis
-    
-    # Placeholder response - в реальности данные берутся из state и БД
-    # Поле analysis будет заполнено если ранее вызывался request_analysis
-    return {
-        "status": "success",
-        "case_id": case_id,
-        
-        # Review info (if exists)
-        "review": {
-            "exists": True,
-            "rating": 2,
-            "text": "Товар пришёл с браком",
-            "pros": "",
-            "cons": "Царапины на корпусе, не включается",
-            "date": "2024-01-18",
-            "our_reply": None,
-        },
-        
-        # Order info
-        "order": {
-            "order_id": "WB-123456",
-            "order_date": "2024-01-15",
-            "delivery_date": "2024-01-17",
-            "product_name": "Смартфон Samsung Galaxy",
-            "price": 25000,
-            "return_eligible": True,
-        },
-        
-        # Chat history
-        "chat_history": [
-            {"role": "customer", "message": "Здравствуйте, товар бракованный", "timestamp": "2024-01-18T10:00:00"},
-            {"role": "agent", "message": "Добрый день! Приносим извинения. Можете описать проблему подробнее?", "timestamp": "2024-01-18T10:05:00"},
-        ],
-        
-        # Previous actions by agent
-        "previous_actions": [
-            {"action": "chat_message", "status": "sent", "timestamp": "2024-01-18T10:05:00"},
-        ],
-        
-        # Saved analysis from state (всегда заполнено, так как Analysis первая нода)
-        # Анализ обновляется при каждом запуске графа
-        "analysis": None,  # будет dict с результатами анализа из Analysis node
-        
-        # Case metadata
-        "created_at": "2024-01-18T10:00:00",
-        "last_activity": "2024-01-18T10:05:00",
-        "status": "in_progress",
-        "customer_name": "Иван",
-    }
-
-
-# =============================================================================
-# =============================================================================
 # Tool Registry for Agent
 # =============================================================================
 
@@ -497,9 +653,11 @@ def get_case_details(
 AGENT_TOOLS = [
     send_chat_message,
     send_review_reply,
-    call_the_human,
+    confirm_wb_return,
+    send_instruction,
+    search_internet,
+    call_the_manager,
     search_similar_cases,
-    get_case_details,
 ]
 
 def get_agent_tools() -> list:
@@ -534,10 +692,10 @@ def get_tool_error_handler(error: Exception) -> str:
         else:
             return (
                 f"Критическая ошибка: {str(error)}. "
-                "Рекомендуется эскалировать на менеджера."
+                "Рассмотри вызов менеджера для ручного решения."
             )
     
     return (
         f"Непредвиденная ошибка: {str(error)}. "
-        "Попробуйте другой подход или эскалируйте на менеджера."
+        "Попробуйте другой подход или рассмотри вызов менеджера для ручного решения."
     )

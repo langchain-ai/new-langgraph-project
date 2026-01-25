@@ -29,7 +29,7 @@ Node naming:
 Data flow:
 - При каждом запуске графа Analysis перепроверяет ситуацию
 - Analysis помнит о предыдущих анализах и информации кейса
-- get_case_details: возвращает информацию о кейсе включая сохранённый анализ
+- Agent получает результаты анализа и базовую информацию о кейсе в промпте
 """
 
 from __future__ import annotations
@@ -125,7 +125,7 @@ def _get_llm(config: RunnableConfig | None = None) -> ChatGoogleGenerativeAI:
 
 
 def _format_user_message(state: CaseState) -> str:
-    """Format user message from case state."""
+    """Format user message from case state with analysis results."""
     parts = []
     
     # Rating
@@ -162,18 +162,22 @@ def _format_user_message(state: CaseState) -> str:
         ])
         parts.append(f"\n**История диалога:**\n{history_str}")
     
-    # Analysis results (if available)
+    # Analysis results (ALWAYS available from Analysis node)
     analysis = state.get("analysis")
     if analysis:
-        parts.append(f"\n**Анализ:**")
-        parts.append(f"- Срочность: {analysis.get('urgency', 'normal')}")
-        parts.append(f"- Тональность: {analysis.get('sentiment', 'neutral')}")
+        parts.append(f"\n**=== РЕЗУЛЬТАТЫ АНАЛИЗА (от агента-аналитика) ===**")
+        parts.append(f"- **Срочность:** {analysis.get('urgency', 'normal')}")
+        parts.append(f"- **Тональность:** {analysis.get('sentiment', 'neutral')}")
         if analysis.get("main_issue"):
-            parts.append(f"- Проблема: {analysis['main_issue']}")
+            parts.append(f"- **Проблема:** {analysis['main_issue']}")
         if analysis.get("risk_factors"):
-            parts.append(f"- Риски: {', '.join(analysis['risk_factors'])}")
+            parts.append(f"- **Риски:** {', '.join(analysis['risk_factors'])}")
+        if analysis.get("requires_compensation"):
+            compensation = analysis.get("suggested_compensation", 0)
+            if compensation > 0:
+                parts.append(f"- **Рекомендуемая компенсация:** {compensation}₽")
     
-    parts.append("\n---\nПроанализируй ситуацию и выполни необходимые действия.")
+    parts.append("\n---\nВыполни необходимые действия на основе анализа.")
     
     return "\n".join(parts)
 
@@ -343,9 +347,12 @@ async def agent_node(state: CaseState, config: RunnableConfig) -> dict[str, Any]
     Available tools:
     - send_chat_message: Send private chat message
     - send_review_reply: Send public review reply
-    - call_the_human: Hand off case to human manager
+    - call_the_manager: Hand off case to human manager
     - search_similar_cases: Search knowledge base
-    - get_case_details: Get case history and context (включая результаты анализа)
+    
+    ВАЖНО: Базовая информация о кейсе и результаты анализа передаются
+    в промпте через _format_user_message(), поэтому инструмент get_case_details
+    больше не нужен.
     """
     logger.info("[Agent] Processing case")
     
@@ -360,7 +367,7 @@ async def agent_node(state: CaseState, config: RunnableConfig) -> dict[str, Any]
     state_messages = list(state.get("messages", []))
     
     if not state_messages:
-        # First run - create initial user message
+        # First run - create initial user message with case info and analysis
         user_msg = HumanMessage(content=_format_user_message(state))
         state_messages = [user_msg]
         messages_to_save = [user_msg]
