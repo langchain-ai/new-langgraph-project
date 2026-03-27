@@ -1,6 +1,8 @@
 # This workflow will run integration tests for the current project once per day
 
 name: Integration Tests
+permissions:
+  contents: read
 
 on:
   schedule:
