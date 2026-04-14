@@ -60,6 +60,6 @@ dev = [
     "anyio>=4.7.0",
     "langgraph-cli[inmem]>=0.4.14",
     "mypy>=1.13.0",
-    "pytest>=8.3.5",
+    "pytest>=9.0.3",
     "ruff>=0.8.2",
 ]
