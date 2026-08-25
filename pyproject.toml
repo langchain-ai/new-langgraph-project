@@ -6,19 +6,19 @@ authors = [
     { name = "William Fu-Hinthorn", email = "13333726+hinthornw@users.noreply.github.com" },
 ]
 readme = "README.md"
-license = { text = "MIT" }
+license = "MIT"
 requires-python = ">=3.10"
 dependencies = [
-    "langgraph>=1.0.0",
-    "python-dotenv>=1.0.1",
+    "langgraph>=1.2.11",
+    "python-dotenv>=1.2.3",
 ]
 
 
 [project.optional-dependencies]
-dev = ["mypy>=1.11.1", "ruff>=0.6.1"]
+dev = ["mypy>=2.3.1", "ruff>=0.16.4"]
 
 [build-system]
-requires = ["setuptools>=83.0.0", "wheel"]
+requires = ["setuptools>=84.0.0", "wheel>=0.48.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
@@ -57,9 +57,9 @@ convention = "google"
 
 [dependency-groups]
 dev = [
-    "anyio>=4.7.0",
-    "langgraph-cli[inmem]>=0.4.14",
-    "mypy>=1.13.0",
-    "pytest>=9.0.3",
-    "ruff>=0.8.2",
+    "anyio>=4.14.2",
+    "langgraph-cli[inmem]>=0.4.31",
+    "mypy>=2.3.1",
+    "pytest>=9.1.1",
+    "ruff>=0.16.4",
 ]
