@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict
 
-from langgraph.graph import StateGraph
+from langgraph.graph import START, StateGraph
 from langgraph.runtime import Runtime
 from typing_extensions import TypedDict
 
@@ -49,6 +49,6 @@ async def call_model(state: State, runtime: Runtime[Context]) -> Dict[str, Any]:
 graph = (
     StateGraph(State, context_schema=Context)
     .add_node(call_model)
-    .add_edge("__start__", "call_model")
+    .add_edge(START, "call_model")
     .compile(name="New Graph")
 )
